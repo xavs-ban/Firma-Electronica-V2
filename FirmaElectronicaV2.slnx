@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FirmaElectronica.Application/FirmaElectronica.Application.csproj" />
+    <Project Path="src/FirmaElectronica.Domain/FirmaElectronica.Domain.csproj" />
+    <Project Path="src/FirmaElectronica.Infrastructure/FirmaElectronica.Infrastructure.csproj" />
+    <Project Path="src/FirmaElectronica.Web/FirmaElectronica.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FirmaElectronica.Tests/FirmaElectronica.Tests.csproj" />
+  </Folder>
+</Solution>
