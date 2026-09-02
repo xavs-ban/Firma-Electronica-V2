@@ -102,6 +102,10 @@ Estructura actual hacia Legalario:
 }
 ```
 
+## Actualizacion de contacto en Quiter
+
+Antes de convocar firma se actualiza el contacto del cliente en Quiter cuando existe `cta_cliente`. Se toma la fila `CLIENTE`, se limpia el telefono a 10 digitos y se manda correo/telefono sin arreglos vacios. Ver [QUITER.md](QUITER.md).
+
 ## Manejo Legalario repositorio
 
 La plataforma actual espera hasta 45 segundos antes de convocar firma. Durante la espera valida descarga/liga del documento. Si Legalario sigue regresando archivo no encontrado en repositorio, se avisa al usuario que puede reintentar en unos minutos o generar nuevamente el documento.
