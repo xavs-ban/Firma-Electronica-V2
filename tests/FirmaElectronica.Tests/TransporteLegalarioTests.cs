@@ -105,7 +105,8 @@ public class TransporteLegalarioTests
     {
         var contacto = ClienteQuiter.PrepararContacto(new("1", " ana@example.com ", "+52 (55) 1234-5678"));
         Assert.Equal("ana@example.com", contacto["email"]);
-        Assert.Equal(new[] { "5512345678" }, Assert.IsType<string[]>(contacto["phoneNumbers"]));
+        using var cuerpo = JsonDocument.Parse(JsonSerializer.Serialize(contacto));
+        Assert.Equal("5512345678", cuerpo.RootElement.GetProperty("phoneNumbers")[0].GetProperty("phoneNumber").GetString());
         var soloCorreo = ClienteQuiter.PrepararContacto(new("1", "ana@example.com", ""));
         Assert.False(soloCorreo.ContainsKey("phoneNumbers"));
         Assert.Empty(ClienteQuiter.PrepararContacto(new("1", " ", "")));
@@ -137,9 +138,11 @@ public class TransporteLegalarioTests
             Assert.Equal("Bearer token-prueba", r.Headers.Authorization!.ToString());
             using var body = JsonDocument.Parse(await r.Content!.ReadAsStringAsync(ct));
             Assert.Equal("cliente@example.com", body.RootElement.GetProperty("email").GetString());
-            Assert.Equal("5512345678", body.RootElement.GetProperty("phoneNumbers")[0].GetString());
-            Assert.Equal("5512345678", body.RootElement.GetProperty("mobilePhoneNumber")[0].GetString());
+            Assert.Equal("5512345678", body.RootElement.GetProperty("phoneNumbers")[0].GetProperty("phoneNumber").GetString());
+            Assert.Equal("5512345678", body.RootElement.GetProperty("mobilePhoneNumber")[0].GetProperty("phoneNumber").GetString());
             Assert.True(body.RootElement.GetProperty("validated").GetBoolean());
+            foreach (var campo in new[] { "phoneNumbers", "mobilePhoneNumber" })
+                Assert.Equal("ACTUALIZADO DESDE FIRMA DIGITAL", body.RootElement.GetProperty(campo)[0].GetProperty("observations").GetString());
             return new HttpResponseMessage(estado);
         });
         using var http = new HttpClient(transporte);

@@ -18,8 +18,8 @@ Antes de convocar a firma, la plataforma actual actualiza los datos de contacto 
 {
   "validated": true,
   "email": "cliente@correo.com",
-  "phoneNumbers": ["5512345678"],
-  "mobilePhoneNumber": ["5512345678"]
+  "phoneNumbers": [{ "phoneNumber": "5512345678", "observations": "ACTUALIZADO DESDE FIRMA DIGITAL" }],
+  "mobilePhoneNumber": [{ "phoneNumber": "5512345678", "observations": "ACTUALIZADO DESDE FIRMA DIGITAL" }]
 }
 ```
 

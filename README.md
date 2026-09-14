@@ -47,3 +47,5 @@ Completar la copia local con los valores privados; está excluida de Git y de la
 Ver [preparación de AWS EC2](docs/AWS.md). `deploy/` incluye servicio systemd, configuración Nginx, ejemplo de variables de entorno y script de publicación con pruebas. No incluye secretos ni crea infraestructura automáticamente.
 
 El logo de Grupo Huerpel fue proporcionado por el propietario del proyecto desde [Wix](https://static.wixstatic.com/media/f44ea7_da67916fa6f445dbb59b839318acbb5d~mv2.jpg) y se sirve localmente.
+
+Para la instancia Windows con IIS y puerto 3366, seguir [AWS-IIS](./docs/AWS-IIS.md). La guía Linux es una alternativa y no corresponde al servidor actual.

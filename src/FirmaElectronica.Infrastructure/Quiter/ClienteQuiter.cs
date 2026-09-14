@@ -14,8 +14,8 @@ public sealed class ClienteQuiter(HttpClient http, QuiterOptions opciones) : IQu
         if (!string.IsNullOrWhiteSpace(contacto.Correo)) resultado["email"] = contacto.Correo.Trim();
         if (telefono.Length > 0)
         {
-            resultado["phoneNumbers"] = new[] { telefono };
-            resultado["mobilePhoneNumber"] = new[] { telefono };
+            resultado["phoneNumbers"] = new[] { new { phoneNumber = telefono, observations = "ACTUALIZADO DESDE FIRMA DIGITAL" } };
+            resultado["mobilePhoneNumber"] = new[] { new { phoneNumber = telefono, observations = "ACTUALIZADO DESDE FIRMA DIGITAL" } };
         }
         if (resultado.Count > 0) resultado["validated"] = true;
         return resultado;

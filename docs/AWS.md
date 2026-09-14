@@ -56,3 +56,5 @@ Abrir `https://DOMINIO/`, comprobar el logo y el login, consultar una referencia
 - Los intentos generados localmente no están en Git. Si deben seguir disponibles tras migrar, transferir su carpeta `App_Data/intentos` de forma privada al almacenamiento de la instancia antes de habilitar el tráfico.
 
 Referencias: [ASP.NET Core con Nginx y systemd](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/linux-nginx?view=aspnetcore-10.0), [instalación de .NET en Linux](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
+
+Para la instancia Windows con IIS y puerto 3366, seguir [AWS-IIS](./AWS-IIS.md). La guía Linux es una alternativa y no corresponde al servidor actual.

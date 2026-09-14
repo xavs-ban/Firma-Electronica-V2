@@ -17,6 +17,20 @@ namespace FirmaElectronica.Tests;
 public class ApiFirmaTests
 {
     [Fact]
+    public async Task SubrutaConservaRecursosCsrfYLogin()
+    {
+        await using var aplicacion = new Aplicacion("/firma-digital");
+        using var cliente = aplicacion.CreateClient();
+        var pagina = await cliente.GetStringAsync("/firma-digital/");
+        Assert.Contains("content=\"/firma-digital/\"", pagina);
+        Assert.Matches("/firma-digital/js/site(?:\\.[a-zA-Z0-9]+)?\\.js", pagina);
+        using var csrf = JsonDocument.Parse(await cliente.GetStringAsync("/firma-digital/api/sesion/csrf"));
+        cliente.DefaultRequestHeaders.Add("X-CSRF-TOKEN", csrf.RootElement.GetProperty("token").GetString());
+        var acceso = await cliente.PostAsJsonAsync("/firma-digital/api/sesion", new Acceso("prueba", "clave"));
+        Assert.Equal(HttpStatusCode.OK, acceso.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/firma-digital/api/agencias")).StatusCode);
+    }
+    [Fact]
     public async Task RutasPrivadasExigenSesion()
     {
         await using var aplicacion = new Aplicacion();
@@ -152,7 +166,7 @@ public class ApiFirmaTests
         cliente.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
         cliente.DefaultRequestHeaders.Add("X-CSRF-TOKEN", json.RootElement.GetProperty("token").GetString());
     }
-    private sealed class Aplicacion : WebApplicationFactory<Program>
+    private sealed class Aplicacion(string? rutaBase = null) : WebApplicationFactory<Program>
     {
         private readonly string carpeta = Path.Combine(Path.GetTempPath(), "firma-api-" + Guid.NewGuid().ToString("N"));
         public int Creaciones, Autorizaciones;
@@ -161,7 +175,8 @@ public class ApiFirmaTests
             builder.UseEnvironment("Development");
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Legalario:BaseUrl"] = "https://api.legalario.com"
+                ["Legalario:BaseUrl"] = "https://api.legalario.com",
+                ["Hosting:PathBase"] = rutaBase
             }));
             builder.ConfigureServices(servicios =>
             {

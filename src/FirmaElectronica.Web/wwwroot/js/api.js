@@ -1,3 +1,4 @@
+const rutaAplicacion = ruta => (document.querySelector('meta[name="firma-base"]')?.content || '/').replace(/\/$/, '') + ruta;
 export class ErrorApi extends Error {
     constructor(mensaje, estado = 0, incierto = false) { super(mensaje); this.estado = estado; this.incierto = incierto; }
 }
@@ -5,7 +6,7 @@ export class ApiFirma {
     ejemplo = false;
     token = null;
     async csrf() {
-        const respuesta = await fetch('/api/sesion/csrf', { credentials: 'same-origin', cache: 'no-store' });
+        const respuesta = await fetch(rutaAplicacion('/api/sesion/csrf'), { credentials: 'same-origin', cache: 'no-store' });
         if (!respuesta.ok) throw new ErrorApi('No se pudo preparar la sesión. Recarga la página.', respuesta.status);
         this.token = (await respuesta.json()).token;
     }
@@ -13,7 +14,7 @@ export class ApiFirma {
         if (metodo !== 'GET' && !this.token) await this.csrf();
         let respuesta;
         try {
-            respuesta = await fetch(ruta, {
+            respuesta = await fetch(rutaAplicacion(ruta), {
                 method: metodo, credentials: 'same-origin', cache: 'no-store', signal,
                 headers: { Accept: 'application/json', ...(datos !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(metodo !== 'GET' ? { 'X-CSRF-TOKEN': this.token } : {}) },
                 ...(datos !== undefined ? { body: JSON.stringify(datos) } : {})
@@ -34,7 +35,7 @@ export class ApiFirma {
         return contenido;
     }
     async pdf(documento) {
-        const respuesta = await fetch(`/api/documentos/${encodeURIComponent(documento.id)}/pdf?agencia=${encodeURIComponent(documento.agencia)}`, { credentials: 'same-origin', cache: 'no-store' });
+        const respuesta = await fetch(rutaAplicacion(`/api/documentos/${encodeURIComponent(documento.id)}/pdf?agencia=${encodeURIComponent(documento.agencia)}`), { credentials: 'same-origin', cache: 'no-store' });
         if (respuesta.status === 401) window.dispatchEvent(new Event('sesion-expirada'));
         if (respuesta.status === 202) throw new ErrorApi('Legalario no entregó una liga ni un PDF disponible. Intenta nuevamente; esto no confirma que el documento siga en preparación.', 202);
         if (!respuesta.ok) {

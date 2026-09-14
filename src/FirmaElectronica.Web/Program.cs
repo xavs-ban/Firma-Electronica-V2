@@ -15,6 +15,10 @@ using Microsoft.AspNetCore.RateLimiting;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true).AddEnvironmentVariables();
 builder.Services.AddRazorPages();
+// Excepción explícita para la dirección HTTP privada solicitada en IIS.
+var httpInterno = builder.Configuration.GetValue<bool>("Hosting:HttpInterno");
+var cookiesSeguras = builder.Environment.IsDevelopment() || httpInterno
+    ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto);
 // Nginx local es el único proxy confiable por defecto.
@@ -27,14 +31,14 @@ builder.Services.AddSession(opciones =>
     opciones.IdleTimeout = TimeSpan.FromMinutes(30);
     opciones.Cookie.HttpOnly = true;
     opciones.Cookie.SameSite = SameSiteMode.Strict;
-    opciones.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+    opciones.Cookie.SecurePolicy = cookiesSeguras;
 });
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(opciones =>
 {
     opciones.ExpireTimeSpan = TimeSpan.FromMinutes(30);
     opciones.Cookie.HttpOnly = true;
     opciones.Cookie.SameSite = SameSiteMode.Strict;
-    opciones.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+    opciones.Cookie.SecurePolicy = cookiesSeguras;
     opciones.Events.OnRedirectToLogin = contexto => { contexto.Response.StatusCode = 401; return Task.CompletedTask; };
     opciones.Events.OnRedirectToAccessDenied = contexto => { contexto.Response.StatusCode = 403; return Task.CompletedTask; };
 });
@@ -83,7 +87,9 @@ builder.Services.AddHostedService(servicios => servicios.GetRequiredService<Cola
 
 var app = builder.Build();
 app.UseForwardedHeaders();
-if (!app.Environment.IsDevelopment()) { app.UseHsts(); app.UseHttpsRedirection(); }
+var rutaBase = builder.Configuration["Hosting:PathBase"];
+if (!string.IsNullOrWhiteSpace(rutaBase)) app.UsePathBase(rutaBase);
+if (!app.Environment.IsDevelopment() && !httpInterno) { app.UseHsts(); app.UseHttpsRedirection(); }
 app.Use(async (contexto, siguiente) =>
 {
     try { await siguiente(contexto); }
