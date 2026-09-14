@@ -29,6 +29,7 @@ builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(opciones =>
 {
     opciones.IdleTimeout = TimeSpan.FromMinutes(30);
+    opciones.Cookie.Name = "FirmaDigital.Session";
     opciones.Cookie.HttpOnly = true;
     opciones.Cookie.SameSite = SameSiteMode.Strict;
     opciones.Cookie.SecurePolicy = cookiesSeguras;
@@ -36,6 +37,7 @@ builder.Services.AddSession(opciones =>
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(opciones =>
 {
     opciones.ExpireTimeSpan = TimeSpan.FromMinutes(30);
+    opciones.Cookie.Name = "FirmaDigital.Auth";
     opciones.Cookie.HttpOnly = true;
     opciones.Cookie.SameSite = SameSiteMode.Strict;
     opciones.Cookie.SecurePolicy = cookiesSeguras;
@@ -43,7 +45,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     opciones.Events.OnRedirectToAccessDenied = contexto => { contexto.Response.StatusCode = 403; return Task.CompletedTask; };
 });
 builder.Services.AddAuthorization();
-builder.Services.AddAntiforgery(opciones => opciones.HeaderName = "X-CSRF-TOKEN");
+builder.Services.AddAntiforgery(opciones => { opciones.HeaderName = "X-CSRF-TOKEN"; opciones.Cookie.Name = "FirmaDigital.Csrf"; });
 builder.Services.AddRateLimiter(opciones =>
 {
     opciones.RejectionStatusCode = 429;
