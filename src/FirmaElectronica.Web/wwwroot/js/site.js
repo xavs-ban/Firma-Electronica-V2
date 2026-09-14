@@ -5,6 +5,21 @@ function iniciar() {
     const $ = selector => document.querySelector(selector);
     const esc = valor => String(valor ?? '').replace(/[&<>"']/g, caracter => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[caracter]));
     const icono = nombre => `<svg aria-hidden="true"><use href="#i-${nombre}" /></svg>`;
+    const nuevoId = () => {
+        if (crypto.randomUUID) return crypto.randomUUID();
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+        const hex = Array.from(bytes, n => n.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+    };
+    let referenciaEntregasPendiente = null;
+    function prepararDesdeEntregas() {
+        if (!referenciaEntregasPendiente) return;
+        $('#referencia').value = referenciaEntregasPendiente;
+        referenciaEntregasPendiente = null;
+        cambiarVista('generar', false);
+        $('#form-referencia').requestSubmit();
+    }
     const fechaHoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const fechaCampo = valor => /^\d{4}-\d{2}-\d{2}/.test(String(valor || '')) ? String(valor).slice(0, 10) : '';
     const fechaCorta = valor => { const d = new Date(valor); return Number.isNaN(d.getTime()) ? 'Por confirmar' : d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); };
@@ -33,9 +48,8 @@ function iniciar() {
         tema.setAttribute('aria-label', oscuro ? 'Activar modo claro' : 'Activar modo oscuro');
         tema.setAttribute('aria-pressed', String(oscuro));
     }
-    let temaGuardado; try { temaGuardado = localStorage.getItem('firma:tema'); } catch {}
-    aplicarTema(temaGuardado ? temaGuardado === 'oscuro' : matchMedia('(prefers-color-scheme: dark)').matches);
-    tema.onclick = () => { const oscuro = document.documentElement.dataset.tema !== 'oscuro'; aplicarTema(oscuro); try { localStorage.setItem('firma:tema', oscuro ? 'oscuro' : 'claro'); } catch {} };
+    aplicarTema(false);
+    tema.onclick = () => aplicarTema(document.documentElement.dataset.tema !== 'oscuro');
     // Una sola ventana a la vez, incluso cuando termina un trabajo en segundo plano.
     let colaVentanas = Promise.resolve();
     function ventana(opciones) {
@@ -131,7 +145,7 @@ function iniciar() {
                 api = new ApiFirma(); await api.csrf();
                 await api.solicitar('/api/sesion', { metodo: 'POST', datos: { usuario: form.usuario.value.trim(), contrasena: form.contrasena.value } });
                 await api.csrf(); await entrar();
-                Swal.close();
+                Swal.close(); prepararDesdeEntregas();
             } catch (error) { $('#error-acceso').textContent = error.message; $('#error-acceso').hidden = false; }
             finally { $('#acceso').classList.remove('acceso-ingresando'); form.removeAttribute('aria-busy'); }
         });
@@ -213,7 +227,7 @@ function iniciar() {
                 if (actual !== versionSesion) return;
                 const agencia = String(datos.dealer || '').trim().toUpperCase();
                 referencias = [];
-                referencias.push({ id: crypto.randomUUID(), referencia: ref, agencia, datos, tipoVenta, estado: 'lista', captura: { folioControl: datos.tipoExpediente === 'SEMINUEVO' ? '' : (folio || String(datos.Folio_control || datos.folio_control || '')), fechaPlanta: fechaCampo(datos.fecha_reporte_planta), aplicaSeguro: false, conectividad: String(datos.conectividad || (datos.poliza ? 'Conectividad' : 'No aplica')), aseguradora: aseguradoras[{'3917': 0, '22883': 2, '2122': 4, '6': 5, '2124': 6, '3115': 7, '2123': 8}[String(datos.cod_aseguradora)]] || '', poliza: String(datos.poliza || ''), inicio: fechaCampo(datos.fecha_inicio_seguro), fin: fechaCampo(datos.fecha_fin_seguro), editado: false } });
+                referencias.push({ id: nuevoId(), referencia: ref, agencia, datos, tipoVenta, estado: 'lista', captura: { folioControl: datos.tipoExpediente === 'SEMINUEVO' ? '' : (folio || String(datos.Folio_control || datos.folio_control || '')), fechaPlanta: fechaCampo(datos.fecha_reporte_planta), aplicaSeguro: false, conectividad: String(datos.conectividad || (datos.poliza ? 'Conectividad' : 'No aplica')), aseguradora: aseguradoras[{'3917': 0, '22883': 2, '2122': 4, '6': 5, '2124': 6, '3115': 7, '2123': 8}[String(datos.cod_aseguradora)]] || '', poliza: String(datos.poliza || ''), inicio: fechaCampo(datos.fecha_inicio_seguro), fin: fechaCampo(datos.fecha_fin_seguro), editado: false } });
                 pintarReferencias(); $('#folio-consulta').value = ''; $('#referencia').value = ''; $('#referencia').focus();
                 notificar(`Referencia de ${agenciaNombre(agencia)} · ${agencia} consultada. Revisa los datos antes de generar.`, 'exito');
             } catch (error) { notificar(error.estado === 404 ? 'No encontramos esta referencia en nuestros registros. Revisa que esté bien capturada; si es reciente, puede que todavía no esté registrada. Puedes corregirla o consultar más tarde.' : error.message, error.estado === 404 ? '' : 'error'); }
@@ -289,7 +303,7 @@ function iniciar() {
             } catch (error) {
                 if (actual !== versionSesion) break;
                 ref.estado = encolando ? 'enviado' : 'lista'; ref.mensaje = error.message;
-                if (encolando) { actividades.unshift({ id: `incierto-${crypto.randomUUID()}`, referencia: ref.referencia, agencia: ref.agencia, plantilla: ref.plantilla, estado: 'RequiereRevision', mensaje: error.message }); pintarActividad(); }
+                if (encolando) { actividades.unshift({ id: `incierto-${nuevoId()}`, referencia: ref.referencia, agencia: ref.agencia, plantilla: ref.plantilla, estado: 'RequiereRevision', mensaje: error.message }); pintarActividad(); }
                 notificar(error.message, 'error');
             }
             pintarReferencias();
@@ -513,5 +527,38 @@ function iniciar() {
             }
         } catch (error) { notificar(error.message, 'error'); }
     });
-    entrar().catch(error => { mostrarAcceso(error.estado === 401 ? '' : error.message); });
+    const apertura = new URLSearchParams(location.hash.slice(1));
+    let origenEntregas = null;
+    try {
+        const origen = new URL(apertura.get('origen'));
+        if (window.parent !== window && apertura.get('entregas') === '1' &&
+            origen.origin === new URL(document.referrer).origin && origen.hostname === location.hostname && origen.protocol === location.protocol)
+            origenEntregas = origen.origin;
+    } catch {}
+    const canalEntregas = apertura.get('canal');
+    if (apertura.has('entregas')) history.replaceState(null, '', location.pathname + location.search);
+    let accesoEntregasUsado = false;
+    window.addEventListener('message', async evento => {
+        if (!origenEntregas || accesoEntregasUsado || evento.source !== window.parent || evento.origin !== origenEntregas ||
+            evento.data?.tipo !== 'firma-acceso' || evento.data.canal !== canalEntregas) return;
+        const { usuario: nombre, password, referencia } = evento.data;
+        if (typeof nombre !== 'string' || typeof password !== 'string' || !nombre || !password ||
+            typeof referencia !== 'string' || !/^[0-9]{1,50}$/.test(referencia)) return;
+        accesoEntregasUsado = true;
+        referenciaEntregasPendiente = referencia;
+        mostrarAcceso('Estamos abriendo tu expediente desde Entregas…');
+        try {
+            api = new ApiFirma(); await api.csrf();
+            await api.solicitar('/api/sesion', { metodo: 'POST', datos: { usuario: nombre, contrasena: password } });
+            await api.csrf(); await entrar();
+            prepararDesdeEntregas();
+        } catch (error) {
+            mostrarAcceso(error.message);
+            $('#form-acceso input[name=usuario]').value = nombre;
+            $('#referencia').value = referencia;
+        }
+    });
+    entrar().catch(error => { mostrarAcceso(error.estado === 401 ? '' : error.message); }).finally(() => {
+        if (origenEntregas && canalEntregas) window.parent.postMessage({ tipo: 'firma-lista', canal: canalEntregas }, origenEntregas);
+    });
 }

@@ -41,3 +41,11 @@ Si cambia el propio script en Git, actualizar primero el clon y copiar nuevament
 Verificar login, consulta de referencia y PDF en la URL final. Las pruebas automatizadas no envían invitaciones ni modifican clientes reales. La ejecución real de PowerShell/IIS debe validarse en Windows; no queda demostrada por compilar en macOS.
 
 Referencia: [Microsoft: subaplicaciones IIS](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/iis/advanced?view=aspnetcore-10.0#sub-applications).
+
+## Integración con Entregas
+
+Desplegar primero Firma Digital y después Entregas. Entregas abre `/firma-digital/` dentro de su modal. Un canal aleatorio y el origen exacto del iframe coordinan el envío de credenciales en memoria mediante `postMessage`; no se agregan a la URL ni se registran en consola. Firma comprueba el origen del padre contra `document.referrer` y exige el mismo host y protocolo (pueden diferir los puertos). Mantener la política de referrer del iframe. La autenticación sigue pasando por Legalario; después se consulta la referencia numérica y se abre Nuevo expediente. El usuario completa los datos obligatorios antes de generar.
+
+Pruebas del intercambio sin contactar proveedores: `node --test tests/browser/entregas.test.mjs`. El tema comienza siempre en claro; cambiarlo en pantalla no persiste para la próxima apertura.
+
+El deploy espera hasta 90 segundos a que el pool termine sus transiciones. Si falla el rollback, conserva el error original y muestra por separado el error de recuperación. No utiliza `iisreset`, pues afectaría a otras plataformas.

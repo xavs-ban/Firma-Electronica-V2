@@ -14,6 +14,21 @@ function Invoke-Checked([string]$File, [string[]]$Arguments) {
   & $File @Arguments
   if ($LASTEXITCODE -ne 0) { throw "$File termino con codigo $LASTEXITCODE" }
 }
+function Set-PoolState([string]$Name, [string]$Desired) {
+  $limite = [DateTime]::UtcNow.AddSeconds(90)
+  $enviado = $false
+  while ([DateTime]::UtcNow -lt $limite) {
+    $estado = (Get-WebAppPoolState $Name).Value
+    if ($estado -eq $Desired) { return }
+    if (!$enviado -and $estado -in @('Started', 'Stopped')) {
+      $enviado = $true
+      if ($Desired -eq 'Stopped') { Stop-WebAppPool $Name }
+      else { Start-WebAppPool $Name }
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  throw "El pool $Name no alcanzo $Desired en 90 segundos. Estado: $estado"
+}
 if (!(Test-Path $SecretsPath)) { throw "Falta completar la configuracion privada: $SecretsPath" }
 # Validar antes de compilar; StrictMode no permite acceder a propiedades ausentes.
 try { $config = Get-Content $SecretsPath -Raw | ConvertFrom-Json -ErrorAction Stop }
@@ -81,13 +96,13 @@ $anterior = if ($app) { $app.physicalPath } else { $null }
 if ($app -and $app.applicationPool -ne $pool) { throw 'La aplicacion existente usa otro pool. Revisar antes de continuar.' }
 try {
   if ($app) {
-    Stop-WebAppPool $pool
+    Set-PoolState $pool Stopped
     Set-ItemProperty "IIS:\Sites\$SiteName\firma-digital" physicalPath $release
   } else {
     New-WebApplication -Site $SiteName -Name 'firma-digital' -PhysicalPath $release -ApplicationPool $pool | Out-Null
   }
-  if ((Get-WebAppPoolState $pool).Value -ne 'Started') { Start-WebAppPool $pool }
-  Start-Website $SiteName
+  Set-PoolState $pool Started
+  if ((Get-Website -Name $SiteName).State -ne 'Started') { Start-Website $SiteName }
   $ok = $false
   for ($i=0; $i -lt 12; $i++) {
     try {
@@ -98,11 +113,16 @@ try {
   if (!$ok) { throw 'El login no respondio correctamente despues del despliegue.' }
   Write-Host "Publicado $commit en http://10.0.128.73:$Port/firma-digital" -ForegroundColor Green
 } catch {
+  $errorOriginal = $_
   if ($anterior) {
-    Stop-WebAppPool $pool -ErrorAction SilentlyContinue
-    Set-ItemProperty "IIS:\Sites\$SiteName\firma-digital" physicalPath $anterior
-    Start-WebAppPool $pool
-    Write-Warning "Restaurada version anterior: $anterior"
+    try {
+      Set-PoolState $pool Stopped
+      Set-ItemProperty "IIS:\Sites\$SiteName\firma-digital" physicalPath $anterior
+      Set-PoolState $pool Started
+      Write-Warning "Restaurada version anterior: $anterior"
+    } catch {
+      Write-Warning ("No se pudo restaurar la version anterior: " + $_.Exception.Message)
+    }
   }
-  throw
+  throw $errorOriginal
 }
