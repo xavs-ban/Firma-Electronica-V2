@@ -15,6 +15,28 @@ function Invoke-Checked([string]$File, [string[]]$Arguments) {
   if ($LASTEXITCODE -ne 0) { throw "$File termino con codigo $LASTEXITCODE" }
 }
 if (!(Test-Path $SecretsPath)) { throw "Falta completar la configuracion privada: $SecretsPath" }
+# Validar antes de compilar; StrictMode no permite acceder a propiedades ausentes.
+try { $config = Get-Content $SecretsPath -Raw | ConvertFrom-Json -ErrorAction Stop }
+catch { throw "No se pudo leer un JSON valido en $SecretsPath. Revisa el archivo sin compartir sus credenciales." }
+if ($null -eq $config -or $config -isnot [System.Management.Automation.PSCustomObject]) {
+  throw "La configuracion debe ser un objeto JSON en $SecretsPath."
+}
+$faltantes = @()
+foreach ($ruta in @('ConnectionStrings.Firma', 'Quiter.ClientId', 'Quiter.ClientSecret', 'Quiter.Code')) {
+  $valor = $config
+  foreach ($parte in $ruta.Split('.')) {
+    if ($null -eq $valor) { break }
+    $propiedad = $valor.PSObject.Properties[$parte]
+    if ($null -eq $propiedad) { $valor = $null; break }
+    $valor = $propiedad.Value
+  }
+  if ($valor -isnot [string] -or [string]::IsNullOrWhiteSpace($valor) -or $valor -match 'REEMPLAZAR') {
+    $faltantes += $ruta
+  }
+}
+if ($faltantes.Count -gt 0) {
+  throw ("Completa estos campos en {0}: {1}. Usa deploy\iis-settings.example.json como estructura; no sobrescribas tus valores existentes." -f $SecretsPath, ($faltantes -join ', '))
+}
 if (!(Test-Path "$env:ProgramFiles\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll")) {
   throw 'Instala el Hosting Bundle de ASP.NET Core 10 para IIS antes de continuar.'
 }
@@ -33,9 +55,6 @@ try {
   Invoke-Checked dotnet @('publish', 'src\FirmaElectronica.Web', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'false', '-o', $release)
 } finally { Pop-Location }
 if (Test-Path "$release\appsettings.Local.json") { throw 'El paquete contiene configuracion local inesperada.' }
-$config = Get-Content $SecretsPath -Raw | ConvertFrom-Json
-if (!$config.ConnectionStrings.Firma -or !$config.Quiter.ClientId -or !$config.Quiter.ClientSecret -or !$config.Quiter.Code) { throw 'Completa SQL y Quiter en la configuracion privada.' }
-if (($config | ConvertTo-Json -Depth 20) -match 'REEMPLAZAR') { throw 'La configuracion contiene valores REEMPLAZAR.' }
 $data = Join-Path $BasePath 'data'
 $root = Join-Path $BasePath 'site-root'
 New-Item -ItemType Directory -Force -Path $data,$root | Out-Null
