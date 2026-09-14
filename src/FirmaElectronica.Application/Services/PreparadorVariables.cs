@@ -96,7 +96,7 @@ public sealed class PreparadorVariables
     private static Dictionary<string, string> ResolverSeguro(SolicitudDocumento solicitud, IReadOnlyDictionary<string, object?> datos, SeguroCapturado? captura)
     {
         var contado = new[] { "CON", "TUA", "OTR", "SIC" }.Contains(solicitud.TipoVentaSeleccionado);
-        var resultado = new Dictionary<string, string> { ["Nombre_seguro"] = "", ["poliza"] = "", ["vigencia"] = "", ["conectividad"] = "" };
+        var resultado = new Dictionary<string, string> { ["Nombre_seguro"] = "No compró seguro", ["poliza"] = "", ["vigencia"] = "", ["conectividad"] = "" };
         if (contado && (!solicitud.AplicaSeguro || captura is null))
         {
             resultado["Nombre_seguro"] = "No compró seguro";
@@ -104,7 +104,7 @@ public sealed class PreparadorVariables
         }
         else if (captura is not null)
         {
-            resultado["Nombre_seguro"] = contado && string.IsNullOrWhiteSpace(captura.Aseguradora) ? "No compró seguro" : captura.Aseguradora ?? "";
+            resultado["Nombre_seguro"] = string.IsNullOrWhiteSpace(captura.Aseguradora) ? "No compró seguro" : captura.Aseguradora;
             resultado["poliza"] = captura.Poliza ?? "";
             resultado["vigencia"] = Vigencia(captura.Inicio, captura.Fin);
             resultado["conectividad"] = captura.Conectividad ?? "";

@@ -89,3 +89,10 @@ strong.sin-firmas,.badge.sin-firmas{color:#c7233c!important}.barra-firmas.sin-fi
 .barra-firmas .inicio-sin-firmas{min-width:12px}
 
 .logo-huerpel{display:block;width:128px;height:auto;margin:0 auto 24px;padding:8px;background:#f7f7f7;border-radius:12px;object-fit:contain}
+
+@keyframes modal-salida{from{opacity:1;transform:none}to{opacity:0;transform:translateY(16px) scale(.96)}}
+@keyframes fondo-modal-salida{from{background-color:#11182770;backdrop-filter:blur(4px)}to{background-color:transparent;backdrop-filter:blur(0)}}
+.modal[open].cerrando,.firma-modal-salida{animation:modal-salida .24s ease-in both}
+.modal[open].cerrando::backdrop{animation:fondo-modal-salida .24s ease-in both}
+.firma-modal-entrada{animation:modal-entrada .32s cubic-bezier(.2,.8,.2,1) both}
+@media(prefers-reduced-motion:reduce){.firma-modal-entrada,.firma-modal-salida,.modal[open].cerrando::backdrop{animation:none!important}}

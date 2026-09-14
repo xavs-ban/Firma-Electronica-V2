@@ -29,10 +29,11 @@ public class PreparacionTests
         Assert.Equal("", documento.Variables[79]);
     }
     [Fact]
-    public void FinanciamientoSinCapturaNiSeguroEnSpDejaCamposVacios()
+    public void FinanciamientoSinSeguroIndicaNoComproSinMoverVariables()
     {
         var documento = Preparar(TipoPlantilla.Financiamiento, new(), "RCI");
-        foreach (var i in Enumerable.Range(77, 4)) Assert.Equal("", documento.Variables[i]);
+        Assert.Equal("No compró seguro", documento.Variables[77]);
+        foreach (var i in Enumerable.Range(78, 3)) Assert.Equal("", documento.Variables[i]);
     }
     [Theory]
     [InlineData("AFD")]

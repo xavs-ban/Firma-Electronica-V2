@@ -47,6 +47,7 @@ function iniciar() {
             return Swal.fire({
                 target: contenedor, heightAuto: false, scrollbarPadding: false,
                 confirmButtonText: 'Entendido', cancelButtonText: 'Cancelar',
+                showClass: { popup: 'firma-modal-entrada' }, hideClass: { popup: 'firma-modal-salida' },
                 confirmButtonColor: '#2448a5', cancelButtonColor: '#68758a',
                 customClass: { popup: 'firma-swal', confirmButton: 'firma-swal-boton', cancelButton: 'firma-swal-boton' },
                 ...opciones
@@ -56,7 +57,7 @@ function iniciar() {
         return tarea;
     }
     function notificar(mensaje, tipo = '') {
-        if (!usuario && !$('#acceso').hidden) return Promise.resolve();
+        if (avisandoExpiracion || (!usuario && !$('#acceso').hidden)) return Promise.resolve();
         return ventana({ title: tipo === 'error' ? 'Vamos a revisarlo' : tipo === 'exito' ? '¡Listo!' : 'Antes de continuar',
             text: mensaje, icon: tipo === 'error' ? 'warning' : tipo === 'exito' ? 'success' : 'info' });
     }
@@ -65,6 +66,29 @@ function iniciar() {
         const antes = boton.innerHTML; boton.disabled = true; boton.innerHTML = `<span class="spinner" aria-hidden="true"></span>${esc(texto)}`;
         try { return await operacion(); } finally { boton.disabled = false; boton.innerHTML = antes; }
     }
+    function cerrarModal(modal, valor = '') {
+        if (!modal?.open || modal.classList.contains('cerrando')) return;
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) { modal.close(valor); return; }
+        modal.classList.add('cerrando');
+        return new Promise(resolve => {
+        let temporizador;
+        const terminar = () => {
+            clearTimeout(temporizador);
+            modal.removeEventListener('animationend', alTerminar);
+            modal.close(valor);
+            modal.classList.remove('cerrando');
+            resolve();
+        };
+        const alTerminar = evento => {
+            if (evento.target === modal && evento.animationName === 'modal-salida') terminar();
+        };
+        modal.addEventListener('animationend', alTerminar);
+        temporizador = setTimeout(terminar, 350);
+        });
+    }
+    document.querySelectorAll('dialog').forEach(modal => {
+        modal.addEventListener('cancel', evento => { evento.preventDefault(); cerrarModal(modal); });
+    });
     function mostrarAcceso(mensaje = '') {
         versionSesion++; Swal.close(); usuario = null; referencias = []; actividades = []; documentos = []; paginaDocumentosCargada = false;
         document.querySelectorAll('dialog[open]').forEach(d => d.close());
@@ -128,11 +152,26 @@ function iniciar() {
     }
     $('#cerrar-sesion').onclick = salir; $('#salir-ejemplo').onclick = salir;
     let vencimientoSesion;
-    function avisarSesionExpirada() {
-        if (!usuario || api.ejemplo) return;
+    let avisandoExpiracion = false;
+    async function avisarSesionExpirada() {
+        if (!usuario || api.ejemplo || avisandoExpiracion) return;
+        avisandoExpiracion = true;
         clearTimeout(vencimientoSesion);
-        mostrarAcceso('Tu sesión expiró. Inicia sesión nuevamente para continuar.');
+        versionSesion++;
+        usuario = null;
+        Swal.close();
+        const mensaje = 'Tu sesión expiró. Inicia sesión nuevamente para continuar.';
+        const contenedor = [...document.querySelectorAll('dialog[open]')].at(-1) || document.body;
+        await Swal.fire({ target: contenedor, title: 'Tu sesión expiró', text: mensaje,
+            icon: 'info', confirmButtonText: 'Aceptar', allowOutsideClick: false, allowEscapeKey: false,
+            heightAuto: false, scrollbarPadding: false,
+            customClass: { popup: 'firma-swal', confirmButton: 'firma-swal-boton' },
+            showClass: { popup: 'firma-modal-entrada' }, hideClass: { popup: 'firma-modal-salida' }
+        });
+        mostrarAcceso(mensaje);
+        $('#form-acceso input[name=contrasena]').value = '';
         $('#form-acceso input[name=usuario]').focus();
+        avisandoExpiracion = false;
     }
     function renovarAvisoSesion() {
         clearTimeout(vencimientoSesion);
@@ -216,7 +255,7 @@ function iniciar() {
         const referenciaAlGuardar = seguroReferencia;
         if (!await pedirConfirmacion('Guardar seguro y conectividad', '¿Estás seguro de guardar los datos capturados para este expediente?', 'Guardar')) return;
         if (!referenciaAlGuardar || seguroReferencia !== referenciaAlGuardar || !$('#modal-seguro').open) return;
-        $('#modal-seguro').close('guardar');
+        await cerrarModal($('#modal-seguro'), 'guardar');
         notificar('Los datos de seguro y conectividad quedaron guardados para este expediente.', 'exito');
     };
     $('#modal-seguro').addEventListener('close', () => {
@@ -448,13 +487,13 @@ function iniciar() {
                 $('#recuperar-acciones').querySelectorAll('[data-candidato-pdf]').forEach(b => b.onclick = () => abrirPdf(normalizarDocumento(candidatos[Number(b.dataset.candidatoPdf)], actividad.agencia)));
                 $('#recuperar-acciones').querySelectorAll('[data-candidato-confirmar]').forEach(b => b.onclick = async () => {
                     const candidato = candidatos[Number(b.dataset.candidatoConfirmar)];
-                    await ocupado(b, 'Asociando…', async () => { try { actividad.documento = await api.solicitar(`${ruta}/confirmar?${query}`, { metodo: 'POST', datos: { documentoId: candidato.id } }); actividad.estado = 'Completado'; actividad.mensaje = ''; pintarActividad(); modal.close(); notificar('Documento recuperado.', 'exito'); } catch (error) { notificar(error.message, 'error'); } });
+                    await ocupado(b, 'Asociando…', async () => { try { actividad.documento = await api.solicitar(`${ruta}/confirmar?${query}`, { metodo: 'POST', datos: { documentoId: candidato.id } }); actividad.estado = 'Completado'; actividad.mensaje = ''; pintarActividad(); await cerrarModal(modal); notificar('Documento recuperado.', 'exito'); } catch (error) { notificar(error.message, 'error'); } });
                 });
             }
         } catch (error) { if (modal.open && sesion === versionSesion) $('#recuperar-contenido').textContent = error.estado === 404 ? 'No encontramos un intento registrado. Si acabas de generar, espera unos momentos y consulta de nuevo desde Actividad.' : error.message; }
     }
     document.addEventListener('click', async evento => {
-        const cerrar = evento.target.closest('[data-cerrar]'); if (cerrar) return document.getElementById(cerrar.dataset.cerrar)?.close();
+        const cerrar = evento.target.closest('[data-cerrar]'); if (cerrar) return cerrarModal(document.getElementById(cerrar.dataset.cerrar));
         const boton = evento.target.closest('[data-accion]'); if (!boton) return;
         const accion = boton.dataset.accion, id = boton.dataset.id;
         try {

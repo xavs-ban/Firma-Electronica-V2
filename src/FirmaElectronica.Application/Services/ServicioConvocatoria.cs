@@ -35,7 +35,9 @@ public sealed class ServicioConvocatoria(ILegalarioClient legalario, IQuiterClie
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         { throw new InvalidOperationException("Legalario no entregó una liga ni un PDF disponible. Consulta el documento e intenta nuevamente."); }
         var actualizado = false;
-        string? aviso = null;
+        string? aviso = string.IsNullOrWhiteSpace(cuentaCliente)
+            ? "No se actualizó el contacto en Quiter porque el expediente no contiene la cuenta del cliente."
+            : null;
         if (!string.IsNullOrWhiteSpace(cuentaCliente))
         {
             var cliente = firmantes.Single(f => f.TipoFirmante == TipoFirmante.Cliente);

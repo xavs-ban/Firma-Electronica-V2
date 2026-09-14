@@ -118,6 +118,37 @@ public class TransporteLegalarioTests
         await new ClienteQuiter(http, new()).ActualizarContactoClienteAsync(new("1", "", ""), default);
         Assert.Equal(0, transporte.Envios);
     }
+    [Theory]
+    [InlineData(HttpStatusCode.NoContent)]
+    [InlineData(HttpStatusCode.BadRequest)]
+    public async Task QuiterEnviaContactoComoLegacyYDetectaRechazo(HttpStatusCode estado)
+    {
+        using var transporte = new Transporte(async (r, ct) =>
+        {
+            Assert.Contains(r.Headers.Accept, h => h.MediaType == "application/json");
+            if (r.RequestUri!.AbsolutePath.EndsWith("/oauth/token"))
+            {
+                Assert.Equal(HttpMethod.Post, r.Method);
+                Assert.Contains("grant_type=authorization_code", await r.Content!.ReadAsStringAsync(ct));
+                return Respuesta("{\"access_token\":\"token-prueba\"}");
+            }
+            Assert.Equal(HttpMethod.Put, r.Method);
+            Assert.Equal("/qis/api/customers/v1/customers/99619", r.RequestUri.AbsolutePath);
+            Assert.Equal("Bearer token-prueba", r.Headers.Authorization!.ToString());
+            using var body = JsonDocument.Parse(await r.Content!.ReadAsStringAsync(ct));
+            Assert.Equal("cliente@example.com", body.RootElement.GetProperty("email").GetString());
+            Assert.Equal("5512345678", body.RootElement.GetProperty("phoneNumbers")[0].GetString());
+            Assert.Equal("5512345678", body.RootElement.GetProperty("mobilePhoneNumber")[0].GetString());
+            Assert.True(body.RootElement.GetProperty("validated").GetBoolean());
+            return new HttpResponseMessage(estado);
+        });
+        using var http = new HttpClient(transporte);
+        var cliente = new ClienteQuiter(http, new() { ClientId = "prueba", ClientSecret = "prueba", Code = "prueba" });
+        var actualizar = () => cliente.ActualizarContactoClienteAsync(new("99619", "cliente@example.com", "5512345678"), default);
+        if (estado == HttpStatusCode.NoContent) await actualizar();
+        else await Assert.ThrowsAsync<InvalidOperationException>(actualizar);
+        Assert.Equal(2, transporte.Envios);
+    }
     private static ClienteLegalario Crear(HttpClient http) => new(http, new() { BaseUrl = "https://api.legalario.com" });
     private static HttpResponseMessage Respuesta(string cuerpo, HttpStatusCode estado = HttpStatusCode.OK) => new(estado) { Content = new StringContent(cuerpo) };
     private sealed class Transporte(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder) : HttpMessageHandler

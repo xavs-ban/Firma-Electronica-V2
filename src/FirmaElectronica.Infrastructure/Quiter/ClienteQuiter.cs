@@ -37,6 +37,7 @@ public sealed class ClienteQuiter(HttpClient http, QuiterOptions opciones) : IQu
                 ["grant_type"] = "authorization_code", ["code"] = opciones.Code
             })
         };
+        autorizacion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         using var respuestaToken = await http.SendAsync(autorizacion, cancellationToken);
         if (!respuestaToken.IsSuccessStatusCode) throw new InvalidOperationException("Quiter no autorizó la actualización de contacto.");
         using var json = JsonDocument.Parse(await respuestaToken.Content.ReadAsByteArrayAsync(cancellationToken));
@@ -48,6 +49,7 @@ public sealed class ClienteQuiter(HttpClient http, QuiterOptions opciones) : IQu
         if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException("Quiter no entregó una autorización válida.");
         using var solicitud = new HttpRequestMessage(HttpMethod.Put, opciones.BaseUrl.TrimEnd('/') + "/api/customers/v1/customers/" + Uri.EscapeDataString(contacto.CuentaCliente))
         { Content = JsonContent.Create(cuerpo) };
+        solicitud.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         solicitud.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var respuesta = await http.SendAsync(solicitud, cancellationToken);
         if (!respuesta.IsSuccessStatusCode) throw new InvalidOperationException("Quiter no confirmó la actualización de contacto.");

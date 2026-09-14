@@ -11,3 +11,7 @@ El 8 de septiembre de 2026 se consultó `INFORMATION_SCHEMA.COLUMNS` de la conex
 - Las tablas contienen campos como `REFX`, `REFERENCIA` y `NRO_CONTRATO`, pero su existencia no demuestra una relación única ni el destino de conectividad.
 
 No se implementó una escritura basada en una unión supuesta. Si se desea persistir la captura además de incorporarla al documento, se debe definir la tabla o procedimiento de destino y verificar la unicidad del registro a actualizar. No se ejecutó el UPDATE antiguo ni se cambió el esquema.
+
+## Leyenda sin seguro
+
+Desde el 14 de septiembre de 2026, por solicitud del usuario, cuando no hay captura ni póliza en la referencia, `Nombre_seguro` indica «No compró seguro», también para financiamiento. La versión antigua dejaba ese caso vacío. Se conserva el orden de variables y la prioridad de los datos del seguro existente.
