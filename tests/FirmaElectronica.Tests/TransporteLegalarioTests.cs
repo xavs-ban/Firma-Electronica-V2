@@ -1,0 +1,129 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using FirmaElectronica.Application.Abstractions;
+using FirmaElectronica.Domain.Firmantes;
+using FirmaElectronica.Infrastructure.Legalario;
+using FirmaElectronica.Infrastructure.Quiter;
+namespace FirmaElectronica.Tests;
+public class TransporteLegalarioTests
+{
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task VistaUsaLigaDelDetalleOEndpointUrlSinDescargarDestino(bool directa)
+    {
+        using var transporte = new Transporte((r, _) =>
+        {
+            Assert.Equal("api.legalario.com", r.RequestUri!.Host);
+            var detalle = r.RequestUri.AbsolutePath == "/v2/documents/d";
+            if (!detalle) Assert.Contains("format=URL", r.RequestUri.Query);
+            return Task.FromResult(Respuesta(detalle && !directa ? "{\"data\":{\"id\":\"d\"}}" : "{\"data\":{\"document\":\"https://storage.example.com/document.pdf?firma=prueba\"}}"));
+        });
+        using var http = new HttpClient(transporte);
+        Assert.Equal("https://storage.example.com/document.pdf?firma=prueba", await Crear(http).ObtenerUrlDocumentoAsync("d", "token", default));
+        Assert.Equal(directa ? 1 : 2, transporte.Envios);
+    }
+    [Fact]
+    public async Task ConsultaPaginaCodificaBusquedaYLeeMetadatos()
+    {
+        using var transporte = new Transporte((r, _) =>
+        {
+            Assert.Contains("search=VIN%20%26%20nombre", r.RequestUri!.Query);
+            Assert.Contains("page=2", r.RequestUri.Query);
+            return Task.FromResult(Respuesta("{\"success\":true,\"data\":{\"data\":[{\"id\":\"d\"}],\"meta\":{\"last_page\":3,\"total\":25}}}"));
+        });
+        using var http = new HttpClient(transporte);
+        var pagina = await Crear(http).ConsultarPaginaAsync("plantilla", 2, 10, "VIN & nombre", "token", default);
+        Assert.Equal(3, pagina.UltimaPagina); Assert.Equal(25, pagina.Total); Assert.Single(pagina.Documentos);
+    }
+    [Fact]
+    public async Task DescargaNoAceptaHtmlComoPdf()
+    {
+        using var transporte = new Transporte((r, _) => Task.FromResult(Respuesta(r.RequestUri!.Query == "" ? "{\"data\":{\"id\":\"d\"}}" : "<html>Error</html>")));
+        using var http = new HttpClient(transporte);
+        Assert.Null(await Crear(http).DescargarPdfAsync("d", "token", default));
+    }
+    [Fact]
+    public async Task DescargaAceptaBytesPdf()
+    {
+        using var transporte = new Transporte((r, _) => Task.FromResult(Respuesta(r.RequestUri!.Query == "" ? "{\"data\":{\"id\":\"d\"}}" : "%PDF-1.7 contenido")));
+        using var http = new HttpClient(transporte);
+        var pdf = await Crear(http).DescargarPdfAsync("d", "token", default);
+        Assert.StartsWith("%PDF-", Encoding.ASCII.GetString(pdf!));
+        Assert.Equal(2, transporte.Envios);
+    }
+    [Fact]
+    public async Task ConvocatoriaMantieneContratoSinReintentar()
+    {
+        using var transporte = new Transporte(async (r, ct) =>
+        {
+            Assert.Equal("/v2/signers", r.RequestUri!.AbsolutePath);
+            using var json = JsonDocument.Parse(await r.Content!.ReadAsStringAsync(ct));
+            var raiz = json.RootElement;
+            Assert.False(raiz.GetProperty("workflow").GetBoolean());
+            Assert.True(raiz.GetProperty("send_invite").GetBoolean());
+            Assert.True(raiz.GetProperty("use_whatsapp").GetBoolean());
+            Assert.Equal("REPRESENTANTE LEGAL", raiz.GetProperty("signers")[0].GetProperty("type").GetString());
+            Assert.Equal("FIRMANTE", raiz.GetProperty("signers")[0].GetProperty("role").GetString());
+            return Respuesta("{}", HttpStatusCode.ServiceUnavailable);
+        });
+        using var http = new HttpClient(transporte);
+        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).ConvocarFirmantesAsync("d", [new("Ana", "ana@example.com", "5512345678", TipoFirmante.RepresentanteLegal)], "token", default));
+        Assert.True(error.ResultadoIncierto); Assert.Equal(1, transporte.Envios);
+    }
+    [Fact]
+    public async Task EstadoUsaConteosDeFirmantes()
+    {
+        using var transporte = new Transporte((_, _) => Task.FromResult(Respuesta("{\"success\":true,\"data\":[{\"status\":\"confirmed\"},{\"status\":\"pending\"}]}")));
+        using var http = new HttpClient(transporte);
+        var estado = await Crear(http).ConsultarFirmasAsync("d", "token", default);
+        Assert.Equal(1, estado.Firmados); Assert.Equal(2, estado.Convocados);
+    }
+    [Fact]
+    public async Task ReenvioSinConfirmacionEsIncierto()
+    {
+        using var transporte = new Transporte((_, _) => Task.FromResult(Respuesta("{}")));
+        using var http = new HttpClient(transporte);
+        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).ReenviarInvitacionAsync("f1", "token", default));
+        Assert.True(error.ResultadoIncierto);
+        Assert.Equal(1, transporte.Envios);
+    }
+    [Fact]
+    public async Task ReenvioYEliminacionUsanMetodoYRutaEsperados()
+    {
+        var rutas = new List<string>();
+        using var transporte = new Transporte((r, _) =>
+        { rutas.Add($"{r.Method} {r.RequestUri!.AbsolutePath}"); return Task.FromResult(Respuesta("", HttpStatusCode.NoContent)); });
+        using var http = new HttpClient(transporte);
+        await Crear(http).ReenviarInvitacionAsync("f1", "token", default);
+        await Crear(http).EliminarDocumentoAsync("d1", "token", default);
+        Assert.Equal(new[] { "POST /v2/signers/f1/invite", "DELETE /v2/documents/d1" }, rutas);
+    }
+    [Fact]
+    public void QuiterLimpiaTelefonoYNoAgregaArreglosVacios()
+    {
+        var contacto = ClienteQuiter.PrepararContacto(new("1", " ana@example.com ", "+52 (55) 1234-5678"));
+        Assert.Equal("ana@example.com", contacto["email"]);
+        Assert.Equal(new[] { "5512345678" }, Assert.IsType<string[]>(contacto["phoneNumbers"]));
+        var soloCorreo = ClienteQuiter.PrepararContacto(new("1", "ana@example.com", ""));
+        Assert.False(soloCorreo.ContainsKey("phoneNumbers"));
+        Assert.Empty(ClienteQuiter.PrepararContacto(new("1", " ", "")));
+    }
+    [Fact]
+    public async Task QuiterSinContactoNoSolicitaToken()
+    {
+        using var transporte = new Transporte((_, _) => throw new InvalidOperationException());
+        using var http = new HttpClient(transporte);
+        await new ClienteQuiter(http, new()).ActualizarContactoClienteAsync(new("1", "", ""), default);
+        Assert.Equal(0, transporte.Envios);
+    }
+    private static ClienteLegalario Crear(HttpClient http) => new(http, new() { BaseUrl = "https://api.legalario.com" });
+    private static HttpResponseMessage Respuesta(string cuerpo, HttpStatusCode estado = HttpStatusCode.OK) => new(estado) { Content = new StringContent(cuerpo) };
+    private sealed class Transporte(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder) : HttpMessageHandler
+    {
+        public int Envios { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        { Envios++; return responder(request, cancellationToken); }
+    }
+}

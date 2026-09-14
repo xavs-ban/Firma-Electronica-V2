@@ -62,7 +62,7 @@ Regla acordada para migracion:
 | FINANCIAMIENTO_TEMPLATES | No |
 | SEMINUEVOS_CONTADO_TEMPLATES | Si |
 | PERSONA_MORAL_TEMPLATES | Si |
-| Hyundai | Si |
+| Hyundai | Sí en V2, confirmado por el usuario; el código anterior lo excluye |
 
 ## Payload creacion de documento
 
@@ -110,11 +110,27 @@ Antes de convocar firma se actualiza el contacto del cliente en Quiter cuando ex
 
 La plataforma actual espera hasta 45 segundos antes de convocar firma. Durante la espera valida descarga/liga del documento. Si Legalario sigue regresando archivo no encontrado en repositorio, se avisa al usuario que puede reintentar en unos minutos o generar nuevamente el documento.
 
-## Pendiente por migrar al siguiente bloque
+## Estado del bloque de variables y consulta
 
-- Orden completo de variables Persona Fisica.
-- Orden completo de variables Hyundai.
-- Orden completo de variables Persona Moral.
-- Mapeo de alias Hyundai.
-- Reglas de seguro/conectividad.
-- Paginacion actual de Mis documentos.
+- Implementados los tres órdenes de variables, los alias Hyundai y las reglas de seguro/conectividad.
+- Implementadas consulta, búsqueda, combinación y paginación de documentos.
+- Ver `CONTINUIDAD.md` y `API_BACKEND.md` para pruebas y pendientes actuales.
+
+## Contraste de integración — 9 septiembre 2026
+
+Se contrastaron los puntos de llamada de `mi_api/login.js`, `form.js` e `index.js` con los clientes de la V2:
+
+| Función | Plataforma actual | V2 |
+| --- | --- | --- |
+| Acceso Legalario | `/auth/login`, email/password; credenciales de respuesta | Corregido: credenciales obtenidas en el servidor, sin cuentas estáticas |
+| Tokens | `customers` al entrar; alcance de documentos en `form.js` | Sólo `customers` para establecer sesión; se corrigió el segundo canje que bloqueaba el acceso |
+| Perfil de agencia | `/api/login` consulta `USUARIOS_LEGALARIO` y BCrypt | SQL sólo consulta perfil; Legalario valida contraseña por indicación del usuario |
+| Generación | Trabajo local, POST `/v2/documents` | Trabajo en segundo plano y registro persistente de intentos |
+| Documentos | GET `/v2/documents`, filtro template_id | Mismo recurso, paginación y filtro autorizado |
+| PDF | Detalle y `/v2/documents/download` | Mismos recursos, descarga PDF autenticada |
+| Convocatoria | POST `/v2/signers`, antes actualización Quiter | Mismo recurso y orden de actualización |
+| Seguimiento | GET `/v2/signers?document_id=...` | Mismo recurso |
+| Reenvío | POST `/v2/signers/{id}/invite` | Mismo recurso |
+| Eliminación | DELETE `/v2/documents/{id}` | Mismo recurso con validación de agencia |
+
+Este contraste de código no sustituye la validación real del proveedor. No se enviaron credenciales ni invitaciones reales durante esta revisión. Los tokens se mantienen en sesión de servidor; el navegador no recibe client_secret. La renovación automática del token en una sesión activa aún no reproduce la de `form.js`: por ahora se requiere volver a iniciar sesión si expira la autorización del proveedor.

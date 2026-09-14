@@ -1,12 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-
 namespace FirmaElectronica.Web.Pages;
-
-public class IndexModel : PageModel
+public class IndexModel(IWebHostEnvironment entorno) : PageModel
 {
-    public void OnGet()
-    {
-
-    }
+    public bool PermiteEjemplo => entorno.IsDevelopment();
+    public void OnGet() { }
 }

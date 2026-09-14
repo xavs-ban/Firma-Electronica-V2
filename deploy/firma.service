@@ -1,0 +1,27 @@
+[Unit]
+Description=Firma Electronica V2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/firma/current
+ExecStart=/usr/bin/dotnet /opt/firma/current/FirmaElectronica.Web.dll
+User=firma
+Group=firma
+EnvironmentFile=/etc/firma/firma.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5022
+Environment=Intentos__Carpeta=/var/lib/firma/intentos
+Environment=DataProtection__Carpeta=/var/lib/firma/keys
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/firma
+
+[Install]
+WantedBy=multi-user.target

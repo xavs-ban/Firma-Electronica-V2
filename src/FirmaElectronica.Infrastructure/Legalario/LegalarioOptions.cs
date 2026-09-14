@@ -4,9 +4,7 @@ public sealed class LegalarioOptions
 {
     public const string SectionName = "Legalario";
 
-    public required string BaseUrl { get; init; }
+    public string BaseUrl { get; init; } = "https://api.legalario.com";
 
-    public required string Token { get; init; }
-
-    public int TimeoutSeconds { get; init; } = 45;
+    public int TimeoutSeconds { get; init; } = 120;
 }
