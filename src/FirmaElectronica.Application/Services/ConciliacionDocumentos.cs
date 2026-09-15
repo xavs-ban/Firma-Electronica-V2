@@ -2,25 +2,27 @@ using System.Text.Json;
 using FirmaElectronica.Application.Abstractions;
 using FirmaElectronica.Domain.Documentos;
 namespace FirmaElectronica.Application.Services;
-public sealed class ConciliacionDocumentos(IRegistroIntentos registro, ConsultaDocumentos documentos)
+public sealed class ConciliacionDocumentos(IRegistroIntentos registro, ILegalarioClient legalario)
 {
     public async Task<IReadOnlyList<JsonElement>> CandidatosAsync(string clave, string token, CancellationToken ct)
     {
         var intento = await registro.LeerAsync(clave, ct) ?? throw new KeyNotFoundException("No existe el intento.");
         var candidatos = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        // El total incluye documentos ajenos al intento cuando el proveedor no filtra
-        // por nombre. No implica que existan varios candidatos para este expediente.
+        // Buscar por VIN evita que los acentos del prefijo alteren el filtro remoto.
+        // La identidad completa se verifica aquí y el usuario revisa el PDF antes de asociar.
+        var vin = intento.Nombre.Split('_').LastOrDefault();
+        var busqueda = vin is not null && System.Text.RegularExpressions.Regex.IsMatch(vin, "^[A-HJ-NPR-Z0-9]{17}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            ? vin : null;
         for (var numero = 1; numero <= 50; numero++)
         {
-            var pagina = await documentos.ConsultarAsync([intento.PlantillaId], numero, 100, intento.Nombre, token, ct);
+            var pagina = await legalario.ConsultarPaginaAsync(intento.PlantillaId, numero, 100, busqueda, token, ct);
             foreach (var documento in pagina.Documentos)
                 if (documento.TryGetProperty("name", out var nombre) && nombre.ValueKind == JsonValueKind.String &&
                     IdentidadDocumento.Coincide(nombre.GetString(), intento.Nombre) &&
-                    ConsultaDocumentos.FechaCreacion(documento) >= intento.IniciadoEn.AddSeconds(-5) &&
                     documento.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String &&
                     !string.IsNullOrWhiteSpace(id.GetString()))
                     candidatos[id.GetString()!] = documento;
-            if ((long)numero * 100 >= pagina.Total)
+            if (numero >= pagina.UltimaPagina)
                 return candidatos.Values.OrderByDescending(ConsultaDocumentos.FechaCreacion).ToArray();
         }
         throw new InvalidOperationException("No se pudo completar la revisión de documentos. La consulta supera el límite de recuperación; contacte a soporte.");

@@ -487,8 +487,12 @@ function iniciar() {
         const modal = $('#modal-recuperar'); $('#recuperar-contenido').innerHTML = '<span class="spinner"></span>Consultando el intento…'; if (!modal.open) modal.showModal();
         const sesion = versionSesion, query = new URLSearchParams({ agencia: actividad.agencia, plantilla: actividad.plantilla });
         const ruta = `/api/intentos/${encodeURIComponent(actividad.referencia)}`;
+        const controlador = new AbortController();
+        const limite = setTimeout(() => controlador.abort(), 60000);
+        const cancelar = () => controlador.abort();
+        modal.addEventListener('close', cancelar, { once: true });
         try {
-            const intento = await api.solicitar(`${ruta}?${query}`); if (!modal.open || sesion !== versionSesion) return;
+            const intento = await api.solicitar(`${ruta}?${query}`, { signal: controlador.signal }); if (!modal.open || sesion !== versionSesion) return;
             $('#recuperar-contenido').innerHTML = `<p><strong>Referencia ${esc(actividad.referencia)}</strong></p><p class="muted" style="margin:8px 0 17px">Estado del intento: ${esc(intento.estado)}.</p><div id="recuperar-acciones"></div>`;
             if (intento.documento || intento.estado === 'Rechazado') {
                 if (intento.documento) { actividad.documento = intento.documento; actividad.estado = 'Completado'; actividad.mensaje = ''; pintarActividad(); }
@@ -496,15 +500,27 @@ function iniciar() {
                 $('#pdf-recuperado')?.addEventListener('click', () => abrirPdf(documentoActividad(actividad)));
 
             } else {
-                const candidatos = await api.solicitar(`${ruta}/candidatos?${query}`); if (!modal.open || sesion !== versionSesion) return;
-                $('#recuperar-acciones').innerHTML = `<p class="muted">Revisa el PDF antes de asociarlo. El nombre y la fecha no garantizan que todos los datos coincidan.</p>${candidatos.length ? candidatos.map((c, i) => `<div class="recuperacion-card"><p>${esc(c.name)}</p><small class="muted">${esc(fechaCorta(c.created_at))}</small><div class="acciones"><button data-candidato-pdf="${i}" class="boton secundario">Ver PDF</button><button data-candidato-confirmar="${i}" class="boton primario">Asociar documento</button></div></div>`).join('') : '<p class="ayuda">No encontramos un candidato todavía. Consulta nuevamente más tarde; no generes otro documento mientras el resultado sea incierto.</p>'}`;
+                $('#recuperar-acciones').innerHTML = '<p role="status"><span class="spinner"></span>Buscando el documento en Legalario…</p><p class="ayuda">La creación quedó sin confirmar. Esta consulta busca el documento existente; no genera otro.</p>';
+                const candidatos = await api.solicitar(`${ruta}/candidatos?${query}`, { signal: controlador.signal }); if (!modal.open || sesion !== versionSesion) return;
+                $('#recuperar-acciones').innerHTML = `<p class="muted">Revisa el PDF y su fecha antes de asociarlo. La lista puede incluir generaciones anteriores del mismo expediente; confirma que sus datos correspondan a esta solicitud.</p>${candidatos.length ? candidatos.map((c, i) => `<div class="recuperacion-card"><p>${esc(c.name)}</p><small class="muted">${esc(fechaCorta(c.created_at))}</small><div class="acciones"><button data-candidato-pdf="${i}" class="boton secundario">Ver PDF</button><button data-candidato-confirmar="${i}" class="boton primario">Asociar documento</button></div></div>`).join('') : '<p class="ayuda">No encontramos un candidato todavía. Consulta nuevamente más tarde; no generes otro documento mientras el resultado sea incierto.</p>'}`;
+                $('#recuperar-acciones').insertAdjacentHTML('beforeend', '<button id="consultar-recuperacion" class="boton secundario" style="margin-top:15px">Volver a consultar</button>');
+                $('#consultar-recuperacion').onclick = () => recuperar(actividad);
                 $('#recuperar-acciones').querySelectorAll('[data-candidato-pdf]').forEach(b => b.onclick = () => abrirPdf(normalizarDocumento(candidatos[Number(b.dataset.candidatoPdf)], actividad.agencia)));
                 $('#recuperar-acciones').querySelectorAll('[data-candidato-confirmar]').forEach(b => b.onclick = async () => {
                     const candidato = candidatos[Number(b.dataset.candidatoConfirmar)];
                     await ocupado(b, 'Asociando…', async () => { try { actividad.documento = await api.solicitar(`${ruta}/confirmar?${query}`, { metodo: 'POST', datos: { documentoId: candidato.id } }); actividad.estado = 'Completado'; actividad.mensaje = ''; pintarActividad(); await cerrarModal(modal); notificar('Documento recuperado.', 'exito'); } catch (error) { notificar(error.message, 'error'); } });
                 });
             }
-        } catch (error) { if (modal.open && sesion === versionSesion) $('#recuperar-contenido').textContent = error.estado === 404 ? 'No encontramos un intento registrado. Si acabas de generar, espera unos momentos y consulta de nuevo desde Actividad.' : error.message; }
+        } catch (error) {
+            if (modal.open && sesion === versionSesion) {
+                const mensaje = error.name === 'AbortError' ? 'Legalario está tardando en responder. Aún no podemos confirmar si el documento se creó. Puedes volver a consultar sin generar otro.' : error.estado === 404 ? 'No encontramos un intento registrado. Si acabas de generar, espera unos momentos y consulta de nuevo desde Actividad.' : error.message;
+                $('#recuperar-contenido').innerHTML = `<p role="status">${esc(mensaje)}</p><button id="reintentar-recuperacion" class="boton secundario" style="margin-top:15px">Volver a consultar</button>`;
+                $('#reintentar-recuperacion').onclick = () => recuperar(actividad);
+            }
+        } finally {
+            clearTimeout(limite);
+            modal.removeEventListener('close', cancelar);
+        }
     }
     document.addEventListener('click', async evento => {
         const cerrar = evento.target.closest('[data-cerrar]'); if (cerrar) return cerrarModal(document.getElementById(cerrar.dataset.cerrar));
