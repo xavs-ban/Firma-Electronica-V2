@@ -154,14 +154,14 @@ public class FlujoDocumentosTests : IDisposable
             ListaRecuperacion = Enumerable.Range(1, 102).Select(x => JsonSerializer.SerializeToElement(new
             {
                 id = x.ToString(),
-                name = x >= 100 ? "Documentacion_BENJAMIN_3N1CK3CE4TL210692" : "Otro expediente",
+                name = x >= 101 ? "Documentacion_BENJAMIN_3N1CK3CE4TL210692" : "Otro expediente",
                 created_at = x == 102 ? fecha.AddDays(-1) : fecha.AddMinutes(1)
             })).ToArray()
         };
         var servicio = new ConciliacionDocumentos(registro, cliente);
         var candidatos = await servicio.CandidatosAsync(GeneracionDocumentos.Clave("u", "22387933", "p"), "token", default);
         Assert.Equal(2, cliente.Consultas);
-        Assert.Equal(new[] { "100", "101", "102" }, candidatos.Select(d => d.GetProperty("id").GetString()).Order());
+        Assert.Equal(new[] { "101", "102" }, candidatos.Select(d => d.GetProperty("id").GetString()).Order());
         await Assert.ThrowsAsync<ArgumentException>(() => servicio.ConfirmarAsync(GeneracionDocumentos.Clave("u", "22387933", "p"), "99", "token", default));
         var recuperado = await servicio.ConfirmarAsync(GeneracionDocumentos.Clave("u", "22387933", "p"), "101", "token", default);
         Assert.Equal("101", recuperado.LegalarioDocumentId);
@@ -195,7 +195,7 @@ public class FlujoDocumentosTests : IDisposable
             return Task.FromResult(new PaginaLegalario(
             [JsonSerializer.SerializeToElement(new { id = plantilla + pagina, created_at = $"2026-09-{(pagina == 1 ? 1 : plantilla == "b" ? 8 : 7):00}T12:00:00Z" })], 2, 2)); 
         }
-        public Task<JsonElement> ConsultarDocumentoAsync(string documentoId, string token, CancellationToken ct) => throw new NotImplementedException();
+        public Task<JsonElement> ConsultarDocumentoAsync(string documentoId, string token, CancellationToken ct) => Task.FromResult(JsonSerializer.SerializeToElement(new { id = documentoId, name = documentoId == "101" ? "Documentacion_BENJAMIN_3N1CK3CE4TL210692" : "Otro", template_id = "p", created_at = "2026-09-15T12:00:00Z" }));
         public Task<byte[]?> DescargarPdfAsync(string documentoId, string token, CancellationToken ct) => Task.FromResult<byte[]?>(SoloLiga ? null : "%PDF-1.7"u8.ToArray());
         public Task<EstadoFirmas> ConsultarFirmasAsync(string documentoId, string token, CancellationToken ct) => Task.FromResult(new EstadoFirmas(0, 0, []));
         public Task ConvocarFirmantesAsync(string documentoId, IReadOnlyCollection<Firmante> firmantes, string token, CancellationToken ct) { Convocatorias++; return Task.CompletedTask; }

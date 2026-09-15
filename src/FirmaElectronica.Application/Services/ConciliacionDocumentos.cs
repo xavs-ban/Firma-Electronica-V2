@@ -13,19 +13,23 @@ public sealed class ConciliacionDocumentos(IRegistroIntentos registro, ILegalari
         var vin = intento.Nombre.Split('_').LastOrDefault();
         var busqueda = vin is not null && System.Text.RegularExpressions.Regex.IsMatch(vin, "^[A-HJ-NPR-Z0-9]{17}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
             ? vin : null;
-        for (var numero = 1; numero <= 50; numero++)
+        var ultima = 1;
+        for (var paso = 0; paso < 50; paso++)
         {
+            var numero = paso == 0 ? 1 : ultima - paso + 1;
+            if (numero < 2 && paso > 0) break;
             var pagina = await legalario.ConsultarPaginaAsync(intento.PlantillaId, numero, 100, busqueda, token, ct);
+            if (paso == 0) ultima = pagina.UltimaPagina;
             foreach (var documento in pagina.Documentos)
                 if (documento.TryGetProperty("name", out var nombre) && nombre.ValueKind == JsonValueKind.String &&
                     IdentidadDocumento.Coincide(nombre.GetString(), intento.Nombre) &&
                     documento.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String &&
                     !string.IsNullOrWhiteSpace(id.GetString()))
                     candidatos[id.GetString()!] = documento;
-            if (numero >= pagina.UltimaPagina)
+            if (candidatos.Count > 0 || ultima == 1)
                 return candidatos.Values.OrderByDescending(ConsultaDocumentos.FechaCreacion).ToArray();
         }
-        throw new InvalidOperationException("No se pudo completar la revisión de documentos. La consulta supera el límite de recuperación; contacte a soporte.");
+        return candidatos.Values.OrderByDescending(ConsultaDocumentos.FechaCreacion).ToArray();
     }
     public Task<DocumentoGenerado> ConfirmarAsync(string clave, string documentoId, string token, CancellationToken ct) => registro.ExclusivoAsync(clave, async cancelacion =>
     {
@@ -35,9 +39,14 @@ public sealed class ConciliacionDocumentos(IRegistroIntentos registro, ILegalari
             if (intento.Documento.LegalarioDocumentId != documentoId) throw new InvalidOperationException("El intento ya está asociado a otro documento.");
             return intento.Documento;
         }
-        var candidatos = await CandidatosAsync(clave, token, cancelacion);
-        var elegido = candidatos.SingleOrDefault(d => d.GetProperty("id").GetString() == documentoId);
-        if (elegido.ValueKind == JsonValueKind.Undefined) throw new ArgumentException("El documento no corresponde a los candidatos del intento.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentoId);
+        var elegido = await legalario.ConsultarDocumentoAsync(documentoId, token, cancelacion);
+        var plantilla = elegido.TryGetProperty("organization_document_id", out var org) ? org.ToString()
+            : elegido.TryGetProperty("template_id", out var tpl) ? tpl.ToString() : "";
+        if (!elegido.TryGetProperty("id", out var id) || id.GetString() != documentoId ||
+            !elegido.TryGetProperty("name", out var nombre) || nombre.ValueKind != JsonValueKind.String ||
+            !IdentidadDocumento.Coincide(nombre.GetString(), intento.Nombre) || plantilla != intento.PlantillaId)
+            throw new ArgumentException("El documento no corresponde al nombre y plantilla de este expediente.");
         var documento = new DocumentoGenerado(intento.Referencia, intento.Nombre, documentoId, ConsultaDocumentos.FechaCreacion(elegido));
         await registro.GuardarAsync(intento with { Estado = "Conciliado", Documento = documento }, cancelacion);
         return documento;

@@ -487,6 +487,23 @@ function iniciar() {
         const modal = $('#modal-recuperar'); $('#recuperar-contenido').innerHTML = '<span class="spinner"></span>Consultando el intento…'; if (!modal.open) modal.showModal();
         const sesion = versionSesion, query = new URLSearchParams({ agencia: actividad.agencia, plantilla: actividad.plantilla });
         const ruta = `/api/intentos/${encodeURIComponent(actividad.referencia)}`;
+        const agregarRecuperacionDirecta = () => {
+            $('#recuperar-contenido').insertAdjacentHTML('beforeend', '<form id="recuperar-liga" style="margin-top:20px"><label for="liga-legalario">¿Ya lo ves en Legalario? Pega la liga del documento</label><input id="liga-legalario" type="url" required placeholder="https://saas.legalario.com/portal/…" style="width:100%;margin:10px 0"><button class="boton secundario" type="submit">Recuperar con esta liga</button></form>');
+            $('#recuperar-liga').onsubmit = async evento => {
+                evento.preventDefault();
+                try {
+                    const liga = new URL($('#liga-legalario').value.trim());
+                    const id = liga.pathname.match(/\/mi-documento\/([a-f0-9]{24})(?:\/|$)/i)?.[1];
+                    if (liga.protocol !== 'https:' || liga.hostname !== 'saas.legalario.com' || !id) throw new Error('Pega la liga del documento abierta en Legalario.');
+                    if (!await pedirConfirmacion('Recuperar documento', 'Confirma que revisaste el contenido en Legalario y corresponde a este expediente.', 'Asociar documento')) return;
+                    await ocupado(evento.submitter, 'Verificando…', async () => {
+                        actividad.documento = await api.solicitar(`${ruta}/confirmar?${query}`, { metodo: 'POST', datos: { documentoId: id } });
+                        actividad.estado = 'Completado'; actividad.mensaje = ''; pintarActividad();
+                        await cerrarModal(modal); notificar('Documento recuperado.', 'exito');
+                    });
+                } catch (error) { notificar(error.message, 'error'); }
+            };
+        };
         const controlador = new AbortController();
         const limite = setTimeout(() => controlador.abort(), 60000);
         const cancelar = () => controlador.abort();
@@ -500,6 +517,7 @@ function iniciar() {
                 $('#pdf-recuperado')?.addEventListener('click', () => abrirPdf(documentoActividad(actividad)));
 
             } else {
+                agregarRecuperacionDirecta();
                 $('#recuperar-acciones').innerHTML = '<p role="status"><span class="spinner"></span>Buscando el documento en Legalario…</p><p class="ayuda">La creación quedó sin confirmar. Esta consulta busca el documento existente; no genera otro.</p>';
                 const candidatos = await api.solicitar(`${ruta}/candidatos?${query}`, { signal: controlador.signal }); if (!modal.open || sesion !== versionSesion) return;
                 $('#recuperar-acciones').innerHTML = `<p class="muted">Revisa el PDF y su fecha antes de asociarlo. La lista puede incluir generaciones anteriores del mismo expediente; confirma que sus datos correspondan a esta solicitud.</p>${candidatos.length ? candidatos.map((c, i) => `<div class="recuperacion-card"><p>${esc(c.name)}</p><small class="muted">${esc(fechaCorta(c.created_at))}</small><div class="acciones"><button data-candidato-pdf="${i}" class="boton secundario">Ver PDF</button><button data-candidato-confirmar="${i}" class="boton primario">Asociar documento</button></div></div>`).join('') : '<p class="ayuda">No encontramos un candidato todavía. Consulta nuevamente más tarde; no generes otro documento mientras el resultado sea incierto.</p>'}`;
@@ -516,6 +534,7 @@ function iniciar() {
                 const mensaje = error.name === 'AbortError' ? 'Legalario está tardando en responder. Aún no podemos confirmar si el documento se creó. Puedes volver a consultar sin generar otro.' : error.estado === 404 ? 'No encontramos un intento registrado. Si acabas de generar, espera unos momentos y consulta de nuevo desde Actividad.' : error.message;
                 $('#recuperar-contenido').innerHTML = `<p role="status">${esc(mensaje)}</p><button id="reintentar-recuperacion" class="boton secundario" style="margin-top:15px">Volver a consultar</button>`;
                 $('#reintentar-recuperacion').onclick = () => recuperar(actividad);
+                agregarRecuperacionDirecta();
             }
         } finally {
             clearTimeout(limite);
