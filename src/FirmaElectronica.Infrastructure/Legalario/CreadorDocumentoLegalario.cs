@@ -64,7 +64,7 @@ public sealed class CreadorDocumentoLegalario : ICreadorDocumentoLegalario
             {
                 var codigo = (int)respuesta.StatusCode;
                 throw new CreacionDocumentoException(
-                    "Legalario no confirmó la creación del documento.",
+                    $"Legalario no confirmó la creación del documento (HTTP {codigo}).",
                     resultadoIncierto: codigo >= 500 || codigo is 408 || codigo < 400,
                     estadoHttp: respuesta.StatusCode);
             }

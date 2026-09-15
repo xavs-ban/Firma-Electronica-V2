@@ -143,6 +143,29 @@ public class FlujoDocumentosTests : IDisposable
         Assert.Equal(await servicio.CrearAsync("u", primero, "token", default), await servicio.CrearAsync("u", segundo, "token", default));
         Assert.Equal(1, cliente.Creaciones);
     }
+    [Fact]
+    public async Task RecuperacionRevisaMasDeCienDocumentosYConservaSoloCoincidenciasDelIntento()
+    {
+        var fecha = DateTimeOffset.Parse("2026-09-15T12:00:00Z");
+        var registro = new RegistroIntentosArchivo(carpeta);
+        await registro.GuardarAsync(new(GeneracionDocumentos.Clave("u", "22387933", "p"), "huella", "22387933", "Documentación_BENJAMIN_VIN", "p", fecha, "Incierto", null), default);
+        var cliente = new LegalarioFalso
+        {
+            ListaRecuperacion = Enumerable.Range(1, 102).Select(x => JsonSerializer.SerializeToElement(new
+            {
+                id = x.ToString(),
+                name = x >= 100 ? "Documentacion_BENJAMIN_VIN" : "Otro expediente",
+                created_at = x == 102 ? fecha.AddDays(-1) : fecha.AddMinutes(1)
+            })).ToArray()
+        };
+        var servicio = new ConciliacionDocumentos(registro, new ConsultaDocumentos(cliente));
+        var candidatos = await servicio.CandidatosAsync(GeneracionDocumentos.Clave("u", "22387933", "p"), "token", default);
+        Assert.Equal(new[] { "100", "101" }, candidatos.Select(d => d.GetProperty("id").GetString()).Order());
+        await Assert.ThrowsAsync<ArgumentException>(() => servicio.ConfirmarAsync(GeneracionDocumentos.Clave("u", "22387933", "p"), "102", "token", default));
+        var recuperado = await servicio.ConfirmarAsync(GeneracionDocumentos.Clave("u", "22387933", "p"), "101", "token", default);
+        Assert.Equal("101", recuperado.LegalarioDocumentId);
+        Assert.Equal(0, cliente.Creaciones);
+    }
     private sealed class QuiterFalso : IQuiterClient
     { public Task ActualizarContactoClienteAsync(ContactoClienteQuiter contacto, CancellationToken cancellationToken) => throw new InvalidOperationException("Error simulado"); }
     private sealed class LegalarioFalso : ILegalarioClient
@@ -150,6 +173,7 @@ public class FlujoDocumentosTests : IDisposable
         public int Creaciones, Convocatorias, Consultas;
         public bool SoloLiga;
         public Task<string?> ObtenerUrlDocumentoAsync(string documentoId, string token, CancellationToken ct) => Task.FromResult<string?>(SoloLiga ? "https://example.com/documento.pdf" : null);
+        public JsonElement[]? ListaRecuperacion;
         public bool ListaAscendente;
         public bool FallarCreacion;
         public async Task<DocumentoGenerado> CrearDocumentoAsync(DocumentoParaCrear documento, string token, CancellationToken cancellationToken)
@@ -161,6 +185,7 @@ public class FlujoDocumentosTests : IDisposable
         public Task<PaginaLegalario> ConsultarPaginaAsync(string plantilla, int pagina, int cantidad, string? busqueda, string token, CancellationToken ct)
         {
             Consultas++;
+            if (ListaRecuperacion is not null) return Task.FromResult(new PaginaLegalario(ListaRecuperacion.Skip((pagina - 1) * cantidad).Take(cantidad).ToArray(), (ListaRecuperacion.Length + cantidad - 1) / cantidad, ListaRecuperacion.Length));
             if (ListaAscendente) return Task.FromResult(new PaginaLegalario(Enumerable.Range(1, 37).Skip((pagina - 1) * cantidad).Take(cantidad).Select(x => JsonSerializer.SerializeToElement(new { id = x.ToString(), created_at = new DateTime(2026, 1, 1).AddDays(x) })).ToArray(), 3, 37));
             return Task.FromResult(new PaginaLegalario(
             [JsonSerializer.SerializeToElement(new { id = plantilla + pagina, created_at = $"2026-09-{(pagina == 1 ? 1 : plantilla == "b" ? 8 : 7):00}T12:00:00Z" })], 2, 2)); 
