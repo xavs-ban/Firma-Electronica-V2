@@ -5,16 +5,25 @@ namespace FirmaElectronica.Application.Services;
 public sealed record ResultadoConvocatoria(bool ContactoActualizado, string? AvisoContacto);
 public sealed class ServicioConvocatoria(ILegalarioClient legalario, IQuiterClient quiter, IRegistroIntentos registro)
 {
-    public Task<ResultadoConvocatoria> ConvocarAsync(string documentoId, string? cuentaCliente, IReadOnlyCollection<Firmante> firmantes, string token, CancellationToken ct)
+    public async Task<ResultadoConvocatoria> ConvocarAsync(string documentoId, string? cuentaCliente, IReadOnlyCollection<Firmante> firmantes, string token, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentoId);
         var clave = GeneracionDocumentos.Clave("CONVOCATORIA", documentoId, "FIRMANTES");
-        return registro.ExclusivoAsync(clave, async cancelacion =>
+        using var plazo = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        plazo.CancelAfter(TimeSpan.FromSeconds(90));
+        try
+        {
+        return await registro.ExclusivoAsync(clave, async cancelacion =>
         {
             var anterior = await registro.LeerAsync(clave, cancelacion);
             if (anterior is not null) throw new InvalidOperationException("Existe una convocatoria registrada. Consulte los firmantes antes de reenviar.");
             return await EjecutarAsync(clave, documentoId, cuentaCliente, firmantes, token, cancelacion);
-        }, ct);
+        }, plazo.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new OperacionLegalarioException("La operación excedió el tiempo de espera. Consulta las firmas para comprobar si Legalario recibió la convocatoria antes de intentar otro envío.", resultadoIncierto: true);
+        }
     }
     private async Task<ResultadoConvocatoria> EjecutarAsync(string clave, string documentoId, string? cuentaCliente, IReadOnlyCollection<Firmante> firmantes, string token, CancellationToken ct)
     {
@@ -43,7 +52,9 @@ public sealed class ServicioConvocatoria(ILegalarioClient legalario, IQuiterClie
             var cliente = firmantes.Single(f => f.TipoFirmante == TipoFirmante.Cliente);
             try
             {
-                await quiter.ActualizarContactoClienteAsync(new(cuentaCliente, cliente.Correo, cliente.Telefono), ct);
+                using var plazoQuiter = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                plazoQuiter.CancelAfter(TimeSpan.FromSeconds(15));
+                await quiter.ActualizarContactoClienteAsync(new(cuentaCliente, cliente.Correo, cliente.Telefono), plazoQuiter.Token);
                 actualizado = true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

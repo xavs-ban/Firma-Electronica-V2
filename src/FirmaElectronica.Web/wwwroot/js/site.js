@@ -466,18 +466,23 @@ function iniciar() {
             if (version !== versionFirmas) return;
             await ocupado(form.querySelector('[type=submit]'), 'Preparando y enviando…', async () => {
                 $('#firmas-mensaje').textContent = 'Validando el documento, actualizando contacto y enviando invitaciones…';
+                const controladorEnvio = new AbortController();
+                const limiteEnvio = setTimeout(() => controladorEnvio.abort(), 130000);
+                const avisoEspera = setTimeout(() => {
+                    if (version === versionFirmas) $('#firmas-mensaje').textContent = 'La respuesta está tardando. No vuelvas a enviar; al terminar podrás consultar si las invitaciones quedaron registradas.';
+                }, 20000);
                 try {
-                    const resultado = await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/convocar`, { metodo: 'POST', datos: { referencia, agencia: documento.agencia, firmantes } });
+                    const resultado = await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/convocar`, { metodo: 'POST', datos: { referencia, agencia: documento.agencia, firmantes }, signal: controladorEnvio.signal });
                     notificar(resultado.avisoContacto || (api.ejemplo ? 'Convocatoria simulada correctamente.' : 'Invitaciones enviadas.'), resultado.avisoContacto ? '' : 'exito');
                     paginaDocumentosCargada = false;
                     if (version === versionFirmas && $('#modal-firmas').open) await abrirFirmas(documento);
                 } catch (error) {
                     if (version === versionFirmas) {
-                        $('#firmas-mensaje').textContent = `${error.message} Consulta las firmas antes de enviar nuevamente.`;
+                        $('#firmas-mensaje').textContent = `${error.name === 'AbortError' ? 'Se agotó el tiempo de espera y no pudimos confirmar el envío.' : error.message} Consulta las firmas antes de enviar nuevamente.`;
                         form.querySelector('[type=submit]').dataset.noRepetir = 'true';
                         const revisar = document.createElement('button'); revisar.type = 'button'; revisar.className = 'boton secundario'; revisar.textContent = 'Consultar firmas'; revisar.onclick = () => abrirFirmas(documento); form.append(revisar);
                     }
-                }
+                } finally { clearTimeout(limiteEnvio); clearTimeout(avisoEspera); }
             });
             const boton = form.querySelector('[type=submit]'); if (boton?.dataset.noRepetir) boton.disabled = true;
         };

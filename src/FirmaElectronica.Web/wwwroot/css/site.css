@@ -119,3 +119,32 @@ strong.sin-firmas,.badge.sin-firmas{color:#c7233c!important}.barra-firmas.sin-fi
     .firmante-estado > div { flex-basis: 100%; }
     .modal-cabecera h2 { font-size: 22px; }
 }
+
+/* Escala de lectura uniforme para la revisión local. */
+:root { font-size: 18px; }
+label, input, select, textarea, .boton, .nav-item,
+.ref-campos input, .ref-campos select,
+#modal-seguro input, #modal-seguro select,
+#modal-seguro label:not(.check-label), #actualizar-documentos,
+.actividad-acciones .boton, .actividad-acciones [data-accion="recuperar"] {
+    font-size: 18px;
+}
+input, select, textarea { line-height: 1.45; }
+th { font-size: 16px; letter-spacing: .3px; }
+td, .doc-nombre strong, .dato strong, .ref-cabecera h3,
+.actividad-info h3, .tabla-cabecera h2, .actividad-intro h2 { font-size: 18px; line-height: 1.5; }
+.muted, .ayuda, .dato span, .dato small, .ref-cabecera .muted,
+.actividad-info p, .actividad-intro p, .tabla-cabecera span,
+.panel-titulo p, .ref-cabecera p, .vacio p, .convocar-pie p,
+.ruta, .usuario small, .pasos { font-size: 16px; line-height: 1.5; }
+.usuario strong { font-size: 17px; }
+.modal-cuerpo, .modal-pie, .firmante-fila input,
+.firmante-estado strong, .firmante-estado p, .firmante-estado .boton { font-size: 18px; }
+.firmante-fila label, .modal-cabecera p, .modal-pie small,
+.modal .ayuda, .modal .muted, .modal .badge,
+.actividad-card small, .actividad-card .muted, .actividad-card .ayuda { font-size: 16px; }
+@media (max-width: 760px) {
+    .pasos { flex-wrap: wrap; gap: 12px; }
+    .actividad-acciones { flex-wrap: wrap; }
+    .boton { white-space: normal; }
+}

@@ -167,6 +167,27 @@ public class FlujoDocumentosTests : IDisposable
         Assert.Equal("101", recuperado.LegalarioDocumentId);
         Assert.Equal(0, cliente.Creaciones);
     }
+    [Fact]
+    public async Task TiempoAgotadoDeQuiterNoImpideInvitarNiPermiteDuplicar()
+    {
+        var cliente = new LegalarioFalso();
+        var servicio = new ServicioConvocatoria(cliente, new QuiterAgotado(), new RegistroIntentosArchivo(carpeta));
+        Firmante[] firmantes = [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)];
+        var resultado = await servicio.ConvocarAsync("d", "cuenta", firmantes, "token", default);
+        Assert.False(resultado.ContactoActualizado);
+        Assert.NotNull(resultado.AvisoContacto);
+        Assert.Equal(1, cliente.Convocatorias);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ConvocarAsync("d", "cuenta", firmantes, "token", default));
+        Assert.Equal(1, cliente.Convocatorias);
+    }
+    private sealed class QuiterAgotado : IQuiterClient
+    {
+        public Task ActualizarContactoClienteAsync(ContactoClienteQuiter contacto, CancellationToken ct)
+        {
+            Assert.True(ct.CanBeCanceled);
+            throw new OperationCanceledException("Tiempo de espera simulado");
+        }
+    }
     private sealed class QuiterFalso : IQuiterClient
     { public Task ActualizarContactoClienteAsync(ContactoClienteQuiter contacto, CancellationToken cancellationToken) => throw new InvalidOperationException("Error simulado"); }
     private sealed class LegalarioFalso : ILegalarioClient
