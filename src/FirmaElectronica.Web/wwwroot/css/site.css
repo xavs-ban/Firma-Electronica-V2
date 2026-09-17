@@ -96,3 +96,26 @@ strong.sin-firmas,.badge.sin-firmas{color:#c7233c!important}.barra-firmas.sin-fi
 .modal[open].cerrando::backdrop{animation:fondo-modal-salida .24s ease-in both}
 .firma-modal-entrada{animation:modal-entrada .32s cubic-bezier(.2,.8,.2,1) both}
 @media(prefers-reduced-motion:reduce){.firma-modal-entrada,.firma-modal-salida,.modal[open].cerrando::backdrop{animation:none!important}}
+
+/* Lectura cómoda también dentro del iframe de Entregas. */
+:root { font-size: 16px; }
+.modal-cabecera h2 { font-size: 24px; line-height: 1.3; }
+.modal-cabecera p { font-size: 14px; line-height: 1.5; color: inherit; }
+.modal-cabecera .eyebrow { font-size: 12px; }
+.modal-cuerpo, .modal-pie { font-size: 16px; line-height: 1.5; }
+.modal-pie small, .modal .ayuda, .modal .muted, .modal .badge { font-size: 14px; }
+.firmante-fila label { font-size: 15px; }
+.firmante-fila input { font-size: 16px; min-height: 46px; }
+.firmante-fila > .badge { font-size: 13px; line-height: 1.4; }
+.firmante-estado strong { font-size: 17px; line-height: 1.45; overflow-wrap: anywhere; }
+.firmante-estado p { font-size: 16px; line-height: 1.5; }
+.firmante-estado .boton { font-size: 16px; min-height: 44px; white-space: normal; }
+.firmante-estado .badge { font-size: 14px; }
+.actividad-card small, .actividad-card .muted, .actividad-card .ayuda { font-size: 14px; }
+@media (max-width: 760px) {
+    .firmante-fila { grid-template-columns: minmax(0, 1fr); }
+    .firmante-fila > .badge, .firmante-fila label, .firmante-fila label:last-child { grid-column: 1; }
+    .firmante-estado { flex-wrap: wrap; gap: 12px; }
+    .firmante-estado > div { flex-basis: 100%; }
+    .modal-cabecera h2 { font-size: 22px; }
+}
