@@ -17,6 +17,7 @@ public sealed record Acceso(string Usuario, string Contrasena);
 public sealed record GenerarEntrada(SolicitudDocumento Solicitud, DatosCapturados Captura, Guid? OperacionId = null);
 public sealed record ConvocarEntrada(string Referencia, string Agencia, IReadOnlyCollection<Firmante> Firmantes);
 public sealed record ConfirmarEntrada(string DocumentoId);
+public sealed record NuevaGeneracionEntrada(string? DocumentoAnterior);
 
 public static class RutasFirma
 {
@@ -182,6 +183,12 @@ public static class RutasFirma
             if (!Plantillas(agencia.Trim().ToUpperInvariant()).Contains(plantilla)) throw new UnauthorizedAccessException();
             var intento = await registro.LeerAsync(GeneracionDocumentos.Clave(Usuario(c).Usuario, referencia, plantilla), ct);
             return intento is null ? Results.NotFound() : Results.Ok(new { intento.Estado, intento.IniciadoEn, intento.Documento });
+        });
+        api.MapPost("/intentos/{referencia}/nueva-generacion", async (string referencia, string plantilla, string agencia, NuevaGeneracionEntrada entrada, HttpContext c, GeneracionDocumentos generacion, CancellationToken ct) =>
+        {
+            Usuario(c).ValidarAgencia(agencia);
+            if (!Plantillas(agencia.Trim().ToUpperInvariant()).Contains(plantilla)) throw new UnauthorizedAccessException();
+            return Results.Ok(await generacion.AutorizarNuevaGeneracionAsync(Usuario(c).Usuario, referencia, plantilla, entrada.DocumentoAnterior, ct));
         });
         api.MapGet("/intentos/{referencia}/candidatos", async (string referencia, string plantilla, string agencia, HttpContext c, ConciliacionDocumentos conciliacion, CancellationToken ct) =>
         {

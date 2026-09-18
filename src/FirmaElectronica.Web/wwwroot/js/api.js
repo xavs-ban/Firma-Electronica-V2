@@ -1,6 +1,6 @@
 const rutaAplicacion = ruta => (document.querySelector('meta[name="firma-base"]')?.content || '/').replace(/\/$/, '') + ruta;
 export class ErrorApi extends Error {
-    constructor(mensaje, estado = 0, incierto = false) { super(mensaje); this.estado = estado; this.incierto = incierto; }
+    constructor(mensaje, estado = 0, incierto = false, reintentable = false) { super(mensaje); this.estado = estado; this.incierto = incierto; this.reintentable = reintentable && !incierto; }
 }
 export class ApiFirma {
     ejemplo = false;
@@ -30,7 +30,7 @@ export class ApiFirma {
         if (!respuesta.ok) {
             if (respuesta.status === 401 && !(ruta === '/api/sesion' && metodo === 'POST')) window.dispatchEvent(new Event('sesion-expirada'));
             const mensaje = contenido.mensaje || contenido.message || (respuesta.status === 401 ? 'Usuario o contraseña incorrectos, o sesión expirada.' : respuesta.status === 403 ? 'No tienes permiso para consultar este expediente.' : respuesta.status === 429 ? 'Hay demasiadas solicitudes. Espera un momento y vuelve a intentar.' : 'No se pudo completar la operación. Revisa los datos e intenta consultar su estado.');
-            throw new ErrorApi(mensaje, respuesta.status, !!contenido.resultadoIncierto);
+            throw new ErrorApi(mensaje, respuesta.status, !!contenido.resultadoIncierto, !!contenido.reintentable);
         }
         return contenido;
     }
@@ -44,5 +44,23 @@ export class ApiFirma {
         }
         if (!(respuesta.headers.get('content-type') || '').includes('application/pdf')) throw new ErrorApi('No recibimos un PDF válido. Consulta el documento de nuevo.');
         return respuesta.blob();
+    }
+}
+
+// Sólo repetir cuando el servidor confirma que es seguro; nunca por un timeout del POST.
+export async function esperarPreparacion(accion, { signal, vigente = () => true, onEspera = () => {}, reintentos = 14 } = {}) {
+    for (let intento = 0; ; intento++) {
+        if (signal?.aborted || !vigente()) throw new DOMException('Operación cancelada', 'AbortError');
+        try { return await accion(); }
+        catch (error) {
+            if (!error.reintentable || error.incierto || intento >= reintentos) throw error;
+            onEspera();
+            await new Promise((resolve, reject) => {
+                const cancelar = () => { clearTimeout(timer); signal?.removeEventListener('abort', cancelar); reject(new DOMException('Operación cancelada', 'AbortError')); };
+                const timer = setTimeout(() => { signal?.removeEventListener('abort', cancelar); resolve(); }, 3000);
+                signal?.addEventListener('abort', cancelar, { once: true });
+                if (signal?.aborted) cancelar();
+            });
+        }
     }
 }

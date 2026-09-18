@@ -154,6 +154,41 @@ public class ApiFirmaTests
         using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync());
         Assert.Equal("527", json.RootElement.GetProperty("dealer").GetString());
     }
+    [Fact]
+    public async Task NuevaGeneracionExigeSesionCsrfAgenciaPlantillaEIdentificadorAnterior()
+    {
+        await using var aplicacion = new Aplicacion();
+        using var cliente = aplicacion.CreateClient();
+        var ruta = "/api/intentos/ref/nueva-generacion?agencia=306&plantilla=" + CatalogoPlantillas.Contado["306"];
+        Assert.Equal(HttpStatusCode.Unauthorized, (await cliente.PostAsJsonAsync(ruta, new NuevaGeneracionEntrada("doc-1"))).StatusCode);
+        await Entrar(cliente); await Csrf(cliente);
+        var entrada = new GenerarEntrada(new("ref", "306", "CON", new(2026, 9, 8), false), new("1001", new(2026, 9, 8), null), Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos", entrada)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos", entrada with { OperacionId = Guid.NewGuid() })).StatusCode);
+        Assert.Equal(1, aplicacion.Creaciones);
+        Assert.Equal(HttpStatusCode.BadRequest, (await cliente.PostAsJsonAsync(ruta, new NuevaGeneracionEntrada("incorrecto"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.PostAsJsonAsync(ruta.Replace("agencia=306", "agencia=474"), new NuevaGeneracionEntrada("doc-1"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.PostAsJsonAsync("/api/intentos/ref/nueva-generacion?agencia=306&plantilla=ajena", new NuevaGeneracionEntrada("doc-1"))).StatusCode);
+        cliente.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        Assert.Equal(HttpStatusCode.BadRequest, (await cliente.PostAsJsonAsync(ruta, new NuevaGeneracionEntrada("doc-1"))).StatusCode);
+        await Csrf(cliente);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync(ruta, new NuevaGeneracionEntrada("doc-1"))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos", entrada with { OperacionId = Guid.NewGuid() })).StatusCode);
+        Assert.Equal(2, aplicacion.Creaciones);
+    }
+    [Fact]
+    public async Task DocumentoPendienteExponeReintentoSeguroAntesDeConvocar()
+    {
+        await using var aplicacion = new Aplicacion { DocumentoPendiente = true };
+        using var cliente = aplicacion.CreateClient();
+        await Entrar(cliente); await Csrf(cliente);
+        var respuesta = await cliente.PostAsJsonAsync("/api/documentos/doc-1/convocar", new ConvocarEntrada("ref", "306", []));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, respuesta.StatusCode);
+        using var error = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync());
+        Assert.True(error.RootElement.GetProperty("reintentable").GetBoolean());
+        Assert.False(error.RootElement.GetProperty("resultadoIncierto").GetBoolean());
+        Assert.Equal(0, aplicacion.Creaciones);
+    }
     private static async Task Entrar(HttpClient cliente)
     {
         await Csrf(cliente);
@@ -170,6 +205,7 @@ public class ApiFirmaTests
     {
         private readonly string carpeta = Path.Combine(Path.GetTempPath(), "firma-api-" + Guid.NewGuid().ToString("N"));
         public int Creaciones, Autorizaciones;
+        public bool DocumentoPendiente;
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
@@ -197,6 +233,7 @@ public class ApiFirmaTests
             if (ruta == "/v2/documents" && solicitud.Method == HttpMethod.Post)
             { Interlocked.Increment(ref Creaciones); return Json(new { data = new { id = "doc-1" } }); }
             if (ruta == "/v2/documents") return Json(new { success = true, data = new { data = Array.Empty<object>(), meta = new { last_page = 1, total = 0 } } });
+            if (ruta == "/v2/documents/doc-1" && DocumentoPendiente) return new(HttpStatusCode.NotFound) { Content = JsonContent.Create(new { success = false }) };
             if (ruta == "/v2/documents/doc-1") return Json(new { data = new { id = "doc-1", template_id = plantilla, name = "Documentacion_ANA_VIN" } });
             if (ruta == "/v2/documents/download") return new(HttpStatusCode.OK) { Content = new ByteArrayContent("%PDF-1.7 simulado"u8.ToArray()) };
             if (ruta == "/v2/signers") return Json(new { success = true, data = Array.Empty<object>() });

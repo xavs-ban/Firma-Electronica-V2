@@ -66,9 +66,11 @@ public sealed class GeneracionDocumentos(IReferenciaDataProvider referencias, IP
                 if (claveOperacion is not null) await registro.GuardarAsync(intento with { Clave = claveOperacion }, token);
             }
             var existente = await registro.LeerAsync(clave, cancelacion);
-            if (existente?.Documento is not null && claveOperacion is null)
+            if (existente?.Documento is not null)
             {
                 if (existente.Huella != huella) throw new InvalidOperationException("La referencia ya tiene un documento con otros datos. Confirme una nueva generación antes de continuar.");
+                if (claveOperacion is not null)
+                    await registro.GuardarAsync(existente with { Clave = claveOperacion }, cancelacion);
                 return existente.Documento;
             }
             if (existente is not null && existente.Documento is null && existente.Estado is not ("NuevoAutorizado" or "Rechazado")) throw new InvalidOperationException("Ya existe un intento para esta referencia y plantilla. Consulte y concilie el resultado antes de generar otra vez.");

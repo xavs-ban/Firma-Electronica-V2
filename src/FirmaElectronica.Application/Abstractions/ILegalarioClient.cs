@@ -15,8 +15,10 @@ public interface ILegalarioClient : ICreadorDocumentoLegalario
     Task ReenviarInvitacionAsync(string firmanteId, string token, CancellationToken ct);
     Task EliminarDocumentoAsync(string documentoId, string token, CancellationToken ct);
 }
-public sealed class OperacionLegalarioException(string mensaje, int? estadoHttp = null, bool resultadoIncierto = false) : Exception(mensaje)
+public sealed class OperacionLegalarioException(string mensaje, int? estadoHttp = null, bool resultadoIncierto = false, bool reintentable = false) : Exception(mensaje)
 {
     public int? EstadoHttp { get; } = estadoHttp;
     public bool ResultadoIncierto { get; } = resultadoIncierto;
+    // Sólo lecturas temporales o rechazos que confirman que no se ejecutó la mutación.
+    public bool Reintentable { get; } = reintentable && !resultadoIncierto;
 }

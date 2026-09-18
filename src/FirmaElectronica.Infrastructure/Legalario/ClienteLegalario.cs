@@ -36,31 +36,61 @@ public sealed class ClienteLegalario(HttpClient http, LegalarioOptions opciones)
             return respuesta;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested || mutacion)
-        { throw new OperacionLegalarioException("Se interrumpió la comunicación con Legalario.", resultadoIncierto: mutacion); }
+        { throw new OperacionLegalarioException("Se interrumpió la comunicación con Legalario.", resultadoIncierto: mutacion, reintentable: !mutacion); }
         catch (HttpRequestException)
-        { throw new OperacionLegalarioException("No se pudo completar la comunicación con Legalario.", resultadoIncierto: mutacion); }
+        { throw new OperacionLegalarioException("No se pudo completar la comunicación con Legalario.", resultadoIncierto: mutacion, reintentable: !mutacion); }
     }
     private async Task<JsonElement> JsonAsync(HttpMethod metodo, string ruta, string token, CancellationToken ct, object? cuerpo = null)
     {
         using var solicitud = Solicitud(metodo, ruta, token, cuerpo);
         using var respuesta = await EnviarAsync(solicitud, ct);
         var mutacion = metodo != HttpMethod.Get;
-        if (!respuesta.IsSuccessStatusCode)
-            throw new OperacionLegalarioException("Legalario rechazó o no confirmó la operación.", (int)respuesta.StatusCode,
-                mutacion && ((int)respuesta.StatusCode >= 500 || (int)respuesta.StatusCode is 408 or < 400));
-        if (respuesta.StatusCode == System.Net.HttpStatusCode.NoContent && mutacion)
-            return JsonSerializer.SerializeToElement(new { success = true });
+        var codigo = (int)respuesta.StatusCode;
+        JsonElement raiz = default;
         try
         {
             using var json = JsonDocument.Parse(await respuesta.Content.ReadAsByteArrayAsync(ct));
-            var raiz = json.RootElement;
-            if (raiz.ValueKind != JsonValueKind.Object || (raiz.TryGetProperty("success", out var exito) && exito.ValueKind == JsonValueKind.False))
-                throw new OperacionLegalarioException("Legalario no confirmó la operación.", resultadoIncierto: mutacion);
-            if (mutacion && (!raiz.TryGetProperty("success", out var confirmacion) || confirmacion.ValueKind != JsonValueKind.True))
-                throw new OperacionLegalarioException("Legalario respondió sin confirmar la operación.", resultadoIncierto: true);
-            return raiz.Clone();
+            raiz = json.RootElement.Clone();
         }
-        catch (JsonException) { throw new OperacionLegalarioException("La respuesta de Legalario no tiene el formato esperado.", resultadoIncierto: mutacion); }
+        catch (JsonException) { }
+        catch (OperationCanceledException) when (mutacion)
+        { throw new OperacionLegalarioException("Se interrumpió la respuesta de Legalario.", resultadoIncierto: true); }
+        catch (IOException)
+        { throw new OperacionLegalarioException("Se interrumpió la respuesta de Legalario.", resultadoIncierto: mutacion, reintentable: !mutacion); }
+        var objeto = raiz.ValueKind == JsonValueKind.Object;
+        var rechazado = objeto && raiz.TryGetProperty("success", out var exito) && exito.ValueKind == JsonValueKind.False;
+        var repositorio = (rechazado || !respuesta.IsSuccessStatusCode) && RepositorioPendiente(raiz);
+        if (!respuesta.IsSuccessStatusCode || rechazado)
+        {
+            // Un 5xx/408 en un POST sigue siendo incierto, incluso si menciona el repositorio.
+            var incierto = mutacion && (codigo >= 500 || codigo == 408 || (codigo < 400 && !rechazado));
+            var temporal = codigo is not (401 or 403) && (mutacion
+                ? !incierto && (repositorio || codigo == 429)
+                : repositorio || codigo is 404 or 408 or 409 or 425 or 429 or >= 500);
+            throw new OperacionLegalarioException(temporal
+                ? "Legalario todavía no permite completar la operación. Espera mientras termina de preparar el documento."
+                : "Legalario rechazó o no confirmó la operación.", codigo, incierto, temporal);
+        }
+        if (respuesta.StatusCode == System.Net.HttpStatusCode.NoContent && mutacion)
+            return JsonSerializer.SerializeToElement(new { success = true });
+        if (!objeto)
+            throw new OperacionLegalarioException("La respuesta de Legalario no tiene el formato esperado.", resultadoIncierto: mutacion);
+        if (mutacion && (!raiz.TryGetProperty("success", out var confirmacion) || confirmacion.ValueKind != JsonValueKind.True))
+            throw new OperacionLegalarioException("Legalario respondió sin confirmar la operación.", resultadoIncierto: true);
+        return raiz;
+    }
+    private static bool RepositorioPendiente(JsonElement valor)
+    {
+        if (valor.ValueKind == JsonValueKind.String)
+        {
+            var mensaje = valor.GetString() ?? "";
+            return mensaje.Contains("archivo no fue encontrado en el repositorio", StringComparison.OrdinalIgnoreCase)
+                || mensaje.Contains("documento no está disponible en el repositorio", StringComparison.OrdinalIgnoreCase)
+                || mensaje.Contains("documento no esta disponible en el repositorio", StringComparison.OrdinalIgnoreCase);
+        }
+        if (valor.ValueKind == JsonValueKind.Object)
+            return valor.EnumerateObject().Any(p => RepositorioPendiente(p.Value));
+        return valor.ValueKind == JsonValueKind.Array && valor.EnumerateArray().Any(RepositorioPendiente);
     }
     public async Task<PaginaLegalario> ConsultarPaginaAsync(string plantilla, int pagina, int cantidad, string? busqueda, string token, CancellationToken ct)
     {

@@ -152,6 +152,52 @@ public class TransporteLegalarioTests
         else await Assert.ThrowsAsync<InvalidOperationException>(actualizar);
         Assert.Equal(2, transporte.Envios);
     }
+    [Theory]
+    [InlineData(404)]
+    [InlineData(408)]
+    [InlineData(409)]
+    [InlineData(425)]
+    [InlineData(429)]
+    [InlineData(500)]
+    [InlineData(503)]
+    public async Task LecturasTemporalesPermitenEsperarRepositorio(int codigo)
+    {
+        using var transporte = new Transporte((_, _) => Task.FromResult(Respuesta("{}", (HttpStatusCode)codigo)));
+        using var http = new HttpClient(transporte);
+        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).ConsultarFirmasAsync("d", "token", default));
+        Assert.True(error.Reintentable);
+        Assert.False(error.ResultadoIncierto);
+        Assert.Equal(codigo, error.EstadoHttp);
+    }
+    [Theory]
+    [InlineData(200, true, false)]
+    [InlineData(422, true, false)]
+    [InlineData(401, false, false)]
+    [InlineData(403, false, false)]
+    [InlineData(408, false, true)]
+    [InlineData(500, false, true)]
+    [InlineData(503, false, true)]
+    public async Task RepositorioEnPostDistingueRechazoDeResultadoIncierto(int codigo, bool temporal, bool incierto)
+    {
+        using var transporte = new Transporte((_, _) => Task.FromResult(Respuesta("{\"success\":false,\"message\":\"El archivo no fue encontrado en el repositorio\"}", (HttpStatusCode)codigo)));
+        using var http = new HttpClient(transporte);
+        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).ConvocarFirmantesAsync("d", [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)], "token", default));
+        Assert.Equal(temporal, error.Reintentable);
+        Assert.Equal(incierto, error.ResultadoIncierto);
+        Assert.Equal(1, transporte.Envios);
+    }
+    [Theory]
+    [InlineData(400)]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(422)]
+    public async Task LecturaConRechazoDefinitivoNoSeReintenta(int codigo)
+    {
+        using var transporte = new Transporte((_, _) => Task.FromResult(Respuesta("{}", (HttpStatusCode)codigo)));
+        using var http = new HttpClient(transporte);
+        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).ConsultarFirmasAsync("d", "token", default));
+        Assert.False(error.Reintentable);
+    }
     private static ClienteLegalario Crear(HttpClient http) => new(http, new() { BaseUrl = "https://api.legalario.com" });
     private static HttpResponseMessage Respuesta(string cuerpo, HttpStatusCode estado = HttpStatusCode.OK) => new(estado) { Content = new StringContent(cuerpo) };
     private sealed class Transporte(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder) : HttpMessageHandler

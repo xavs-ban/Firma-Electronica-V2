@@ -1,4 +1,4 @@
-import { ApiFirma, ErrorApi } from './api.js';
+import { ApiFirma, ErrorApi, esperarPreparacion } from './api.js';
 const raiz = document.querySelector('#firma-app');
 if (raiz) iniciar();
 function iniciar() {
@@ -427,7 +427,10 @@ function iniciar() {
         $('#firmas-contenido').innerHTML = '<span class="spinner"></span>Consultando firmantes…';
         if (!$('#modal-firmas').open) $('#modal-firmas').showModal();
         try {
-            const estado = await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/firmas?agencia=${encodeURIComponent(documento.agencia)}`);
+            const estado = await esperarPreparacion(() => api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/firmas?agencia=${encodeURIComponent(documento.agencia)}`), {
+                vigente: () => actual === versionFirmas && $('#modal-firmas').open,
+                onEspera: () => { if (actual === versionFirmas) $('#firmas-contenido').textContent = 'Legalario sigue preparando el documento. Volveremos a consultar automáticamente…'; }
+            });
             if (actual !== versionFirmas || !$('#modal-firmas').open) return;
             if (estado.convocados > 0) {
                 $('#firmas-contenido').innerHTML = `<span class="badge ${estado.firmados === 0 ? 'sin-firmas' : estado.firmados === estado.convocados ? 'ok' : 'proceso'}">${estado.firmados} de ${estado.convocados} personas han firmado</span>${estado.firmantes.map(f => `<div class="firmante-estado"><div><strong>${esc(f.fullname || f.name || 'Firmante')}</strong><p>${esc(f.type || '')} · ${esc(f.email || '')}</p></div><span class="badge ${f.status === 'confirmed' ? 'ok' : 'aviso'}">${f.status === 'confirmed' ? 'Firmado' : 'Pendiente'}</span>${f.status !== 'confirmed' ? `<button class="boton secundario" data-reenviar="${esc(f.id)}">Reenviar invitación</button>` : ''}</div>`).join('')}`;
@@ -437,7 +440,9 @@ function iniciar() {
                 });
             } else {
                 $('#firmas-contenido').innerHTML = '<h3>Revisa los firmantes</h3><div id="form-firmantes-area"><span class="spinner"></span>Recuperando los contactos del expediente…</div>';
-                const preparada = await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/preparar-firmantes?agencia=${encodeURIComponent(documento.agencia)}`);
+                const preparada = await esperarPreparacion(() => api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/preparar-firmantes?agencia=${encodeURIComponent(documento.agencia)}`), {
+                    vigente: () => actual === versionFirmas && $('#modal-firmas').open
+                });
                 if (actual !== versionFirmas || !$('#modal-firmas').open) return;
                 pintarFirmantes(preparada.firmantes, preparada.referencia, documento, actual);
             }
@@ -472,14 +477,18 @@ function iniciar() {
                     if (version === versionFirmas) $('#firmas-mensaje').textContent = 'La respuesta está tardando. No vuelvas a enviar; al terminar podrás consultar si las invitaciones quedaron registradas.';
                 }, 20000);
                 try {
-                    const resultado = await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/convocar`, { metodo: 'POST', datos: { referencia, agencia: documento.agencia, firmantes }, signal: controladorEnvio.signal });
+                    const resultado = await esperarPreparacion(() => api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/convocar`, { metodo: 'POST', datos: { referencia, agencia: documento.agencia, firmantes }, signal: controladorEnvio.signal }), {
+                        signal: controladorEnvio.signal, reintentos: 1,
+                        vigente: () => version === versionFirmas && $('#modal-firmas').open,
+                        onEspera: () => { if (version === versionFirmas) $('#firmas-mensaje').textContent = 'Legalario todavía no aceptó el envío. Esperando para volver a intentarlo…'; }
+                    });
                     notificar(resultado.avisoContacto || (api.ejemplo ? 'Convocatoria simulada correctamente.' : 'Invitaciones enviadas.'), resultado.avisoContacto ? '' : 'exito');
                     paginaDocumentosCargada = false;
                     if (version === versionFirmas && $('#modal-firmas').open) await abrirFirmas(documento);
                 } catch (error) {
                     if (version === versionFirmas) {
                         $('#firmas-mensaje').textContent = `${error.name === 'AbortError' ? 'Se agotó el tiempo de espera y no pudimos confirmar el envío.' : error.message} Consulta las firmas antes de enviar nuevamente.`;
-                        form.querySelector('[type=submit]').dataset.noRepetir = 'true';
+                        if (error.incierto || error.name === 'AbortError') form.querySelector('[type=submit]').dataset.noRepetir = 'true';
                         const revisar = document.createElement('button'); revisar.type = 'button'; revisar.className = 'boton secundario'; revisar.textContent = 'Consultar firmas'; revisar.onclick = () => abrirFirmas(documento); form.append(revisar);
                     }
                 } finally { clearTimeout(limiteEnvio); clearTimeout(avisoEspera); }

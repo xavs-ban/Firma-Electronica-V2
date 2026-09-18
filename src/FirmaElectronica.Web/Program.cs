@@ -102,6 +102,7 @@ app.Use(async (contexto, siguiente) =>
         {
             UnauthorizedAccessException => 403, AntiforgeryValidationException => 400,
             ArgumentException => 400, KeyNotFoundException => 404, InvalidOperationException => 409,
+            OperacionLegalarioException { Reintentable: true } => 503,
             CreacionDocumentoException or OperacionLegalarioException => 502, _ => 500
         };
         var mensaje = error is ArgumentException or KeyNotFoundException or InvalidOperationException or CreacionDocumentoException or OperacionLegalarioException
@@ -109,7 +110,7 @@ app.Use(async (contexto, siguiente) =>
         // Evita registrar cuerpos, contraseñas, tokens o detalles del proveedor SQL.
         app.Logger.LogWarning("Operación API fallida. Tipo {Tipo}, estado {Estado}", error.GetType().Name, estado);
         contexto.Response.StatusCode = estado;
-        await contexto.Response.WriteAsJsonAsync(new { mensaje, resultadoIncierto = error is CreacionDocumentoException { ResultadoIncierto: true } or OperacionLegalarioException { ResultadoIncierto: true } });
+        await contexto.Response.WriteAsJsonAsync(new { mensaje, reintentable = error is OperacionLegalarioException { Reintentable: true }, resultadoIncierto = error is CreacionDocumentoException { ResultadoIncierto: true } or OperacionLegalarioException { ResultadoIncierto: true } });
     }
 });
 app.UseRouting();
