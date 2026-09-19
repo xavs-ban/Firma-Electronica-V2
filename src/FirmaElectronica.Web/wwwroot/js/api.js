@@ -64,3 +64,8 @@ export async function esperarPreparacion(accion, { signal, vigente = () => true,
         }
     }
 }
+
+export function enlaceFirma(firmanteId) {
+    if (typeof firmanteId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(firmanteId)) throw new Error('No se recibió un identificador de firmante válido.');
+    return `https://saas.legalario.com/portal/invitacion/${encodeURIComponent(firmanteId)}`;
+}

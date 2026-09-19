@@ -182,7 +182,7 @@ public sealed class ClienteLegalario(HttpClient http, LegalarioOptions opciones)
         ValidadorFirmantes.Validar(firmantes);
         await JsonAsync(HttpMethod.Post, "/v2/signers", token, ct, new
         {
-            document_id = documentoId, workflow = false, use_whatsapp = true, send_invite = true,
+            document_id = documentoId, use_whatsapp = true, send_invite = true,
             signers = firmantes.Select(f => new { fullname = f.Nombre.Trim(), email = f.Correo.Trim(), phone = f.Telefono.Trim(), type = ValidadorFirmantes.Tipo(f.TipoFirmante), role = "FIRMANTE" })
         });
     }

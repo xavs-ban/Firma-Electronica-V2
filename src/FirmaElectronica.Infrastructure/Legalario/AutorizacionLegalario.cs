@@ -1,9 +1,13 @@
 using System.Text.Json;
 namespace FirmaElectronica.Infrastructure.Legalario;
 public sealed record CredencialesLegalario(string ClientId, string ClientSecret);
+public sealed record SesionLegalario(string Token, CredencialesLegalario Credenciales);
 public sealed class AutorizacionLegalario(HttpClient http, LegalarioOptions opciones)
 {
-    public async Task<string?> IniciarSesionAsync(string usuario, string contrasena, CancellationToken ct)
+    public async Task<string?> IniciarSesionAsync(string usuario, string contrasena, CancellationToken ct) =>
+        (await IniciarSesionConCredencialesAsync(usuario, contrasena, ct))?.Token;
+
+    public async Task<SesionLegalario?> IniciarSesionConCredencialesAsync(string usuario, string contrasena, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(usuario) || usuario.Length > 100 || string.IsNullOrEmpty(contrasena) || contrasena.Length > 4096) return null;
         using var solicitud = new HttpRequestMessage(HttpMethod.Post, opciones.BaseUrl.TrimEnd('/') + "/auth/login")
@@ -23,7 +27,7 @@ public sealed class AutorizacionLegalario(HttpClient http, LegalarioOptions opci
             string.IsNullOrWhiteSpace(id.GetString()) || string.IsNullOrWhiteSpace(secreto.GetString()))
             throw new InvalidOperationException("Legalario no entregó las credenciales de sesión.");
         var credenciales = new CredencialesLegalario(id.GetString()!, secreto.GetString()!);
-        return await ObtenerTokenAsync(credenciales, ct, "customers");
+        return new(await ObtenerTokenAsync(credenciales, ct, "customers"), credenciales);
     }
 
     public async Task<string> ObtenerTokenAsync(CredencialesLegalario credenciales, CancellationToken ct, string scope = "[sdk,services,documents,signers,signature,attachments,envelopes,demo]")

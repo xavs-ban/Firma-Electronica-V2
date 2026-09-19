@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FirmaElectronica.Application.Abstractions;
 using FirmaElectronica.Domain.Documentos;
+using FirmaElectronica.Domain.Firmantes;
 using FirmaElectronica.Domain.Plantillas;
 using FirmaElectronica.Domain.Usuarios;
 using FirmaElectronica.Infrastructure.Intentos;
@@ -189,6 +190,30 @@ public class ApiFirmaTests
         Assert.False(error.RootElement.GetProperty("resultadoIncierto").GetBoolean());
         Assert.Equal(0, aplicacion.Creaciones);
     }
+    [Fact]
+    public async Task ConsultaYConvocatoriaSolicitanPermisosDeFirmantesSinExponerCredenciales()
+    {
+        await using var aplicacion = new Aplicacion();
+        using var cliente = aplicacion.CreateClient();
+        await Entrar(cliente); await Csrf(cliente);
+        Assert.Equal(new[] { "customers" }, aplicacion.Scopes);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/api/documentos/doc-1/firmas?agencia=306")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/api/documentos/doc-1/firmas?agencia=306")).StatusCode);
+        Assert.Equal(2, aplicacion.Autorizaciones);
+        Assert.Contains("signers", aplicacion.Scopes[1]);
+        Firmante[] firmantes = [
+            new("Representante", "rep@example.com", "5512345678", TipoFirmante.RepresentanteLegal),
+            new("Gerente", "gerente@example.com", "5512345678", TipoFirmante.GerenteDeVentas),
+            new("Asesor", "asesor@example.com", "5512345678", TipoFirmante.Apv),
+            new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)
+        ];
+        Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos/doc-1/convocar", new ConvocarEntrada("ref", "306", firmantes))).StatusCode);
+        Assert.Equal(3, aplicacion.Autorizaciones);
+        Assert.Equal(aplicacion.Scopes[1], aplicacion.Scopes[2]);
+        var sesion = await cliente.GetStringAsync("/api/sesion");
+        Assert.DoesNotContain("secreto-falso", sesion);
+        Assert.DoesNotContain("cliente-falso", sesion);
+    }
     private static async Task Entrar(HttpClient cliente)
     {
         await Csrf(cliente);
@@ -206,6 +231,7 @@ public class ApiFirmaTests
         private readonly string carpeta = Path.Combine(Path.GetTempPath(), "firma-api-" + Guid.NewGuid().ToString("N"));
         public int Creaciones, Autorizaciones;
         public bool DocumentoPendiente;
+        public List<string> Scopes { get; } = [];
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
@@ -228,7 +254,14 @@ public class ApiFirmaTests
             var ruta = solicitud.RequestUri!.AbsolutePath;
             var plantilla = CatalogoPlantillas.Contado["306"];
             if (ruta == "/auth/login") return Json(new { success = true, data = new { client_id = "cliente-falso", client_secret = "secreto-falso" } });
-            if (ruta == "/auth/token") { Interlocked.Increment(ref Autorizaciones); return Json(new { data = new { access_token = "token-interno" } }); }
+            if (ruta == "/auth/token")
+            {
+                Interlocked.Increment(ref Autorizaciones);
+                var cuerpo = solicitud.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                var scope = Uri.UnescapeDataString(cuerpo.Split('&').Single(p => p.StartsWith("scope="))[6..]);
+                Scopes.Add(scope);
+                return Json(new { data = new { access_token = "token-interno" } });
+            }
             Assert.Equal("token-interno", solicitud.Headers.Authorization?.Parameter);
             if (ruta == "/v2/documents" && solicitud.Method == HttpMethod.Post)
             { Interlocked.Increment(ref Creaciones); return Json(new { data = new { id = "doc-1" } }); }

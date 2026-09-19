@@ -26,6 +26,19 @@ public static class RutasFirma
         contexto.User.FindFirstValue(ClaimTypes.Name) ?? "", contexto.User.FindFirstValue(ClaimTypes.Role) ?? "",
         contexto.User.FindFirstValue("agencias") ?? "");
     private static string Token(HttpContext contexto) => contexto.Session.GetString("LegalarioToken") ?? throw new UnauthorizedAccessException("La sesión expiró. Inicie sesión nuevamente.");
+    private static async Task<string> TokenConvocatoriaAsync(HttpContext contexto, AutorizacionLegalario autorizacion, CancellationToken ct, bool renovar = false)
+    {
+        if (!renovar && contexto.Session.GetString("LegalarioTokenFirmantes") is { } vigente) return vigente;
+        var id = contexto.Session.GetString("LegalarioClientId");
+        var secreto = contexto.Session.GetString("LegalarioClientSecret");
+        if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(secreto))
+            throw new InvalidOperationException("Cierra sesión e ingresa nuevamente para renovar la autorización de firma.");
+        // Igual que getToken() del flujo anterior: renovar antes del envío, sin repetir el POST de firmantes.
+        var token = await autorizacion.ObtenerTokenAsync(new(id, secreto), ct);
+        contexto.Session.SetString("LegalarioToken", token);
+        contexto.Session.SetString("LegalarioTokenFirmantes", token);
+        return token;
+    }
     private static IReadOnlyCollection<string> Plantillas(string agencia) => PlantillasPorAgencia.Obtener(agencia).Values.Distinct().ToArray();
     private static async Task<JsonElement> AutorizarDocumento(HttpContext contexto, ILegalarioClient legalario, string agencia, string id, CancellationToken ct)
     {
@@ -46,12 +59,14 @@ public static class RutasFirma
         });
         app.MapPost("/api/sesion", async (Acceso acceso, HttpContext c, IConsultaPerfilUsuario autenticador, AutorizacionLegalario autorizacion, CancellationToken ct) =>
         {
-            var token = await autorizacion.IniciarSesionAsync(acceso.Usuario, acceso.Contrasena, ct);
-            if (token is null) return Results.Unauthorized();
+            var sesion = await autorizacion.IniciarSesionConCredencialesAsync(acceso.Usuario, acceso.Contrasena, ct);
+            if (sesion is null) return Results.Unauthorized();
             var usuario = await autenticador.ConsultarAsync(acceso.Usuario, ct);
             if (usuario is null) return Results.Forbid();
             c.Session.Clear();
-            c.Session.SetString("LegalarioToken", token);
+            c.Session.SetString("LegalarioToken", sesion.Token);
+            c.Session.SetString("LegalarioClientId", sesion.Credenciales.ClientId);
+            c.Session.SetString("LegalarioClientSecret", sesion.Credenciales.ClientSecret);
             var identidad = new ClaimsIdentity(new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, usuario.Usuario), new Claim(ClaimTypes.Name, usuario.Nombre),
@@ -122,10 +137,12 @@ public static class RutasFirma
             c.Response.Headers.CacheControl = "no-store";
             return pdf is null ? Results.Accepted(value: new { preparando = true }) : Results.File(pdf, "application/pdf");
         });
-        api.MapGet("/documentos/{id}/firmas", async (string id, string agencia, HttpContext c, ILegalarioClient legalario, CancellationToken ct) =>
+        api.MapGet("/documentos/{id}/firmas", async (string id, string agencia, HttpContext c, ILegalarioClient legalario, AutorizacionLegalario autorizacion, CancellationToken ct) =>
         {
+            Usuario(c).ValidarAgencia(agencia);
+            var token = await TokenConvocatoriaAsync(c, autorizacion, ct);
             await AutorizarDocumento(c, legalario, agencia, id, ct);
-            return Results.Ok(await legalario.ConsultarFirmasAsync(id, Token(c), ct));
+            return Results.Ok(await legalario.ConsultarFirmasAsync(id, token, ct));
         });
         api.MapGet("/documentos/{id}/preparar-firmantes", async (string id, string agencia, HttpContext c, ILegalarioClient legalario, IRegistroIntentos registro, IReferenciaDataProvider referencias, IPlantillaResolver resolver, PreparadorFirmantes preparador, CancellationToken ct) =>
         {
@@ -143,7 +160,7 @@ public static class RutasFirma
             if (regla.LegalarioTemplateId != plantilla) throw new ArgumentException("La plantilla no coincide con el expediente.");
             return Results.Ok(new { referencia, firmantes = preparador.Preparar(regla, datos) });
         });
-        api.MapPost("/documentos/{id}/convocar", async (string id, ConvocarEntrada entrada, HttpContext c, ILegalarioClient legalario, IReferenciaDataProvider referencias, IPlantillaResolver resolver, PreparadorFirmantes preparadorFirmantes, ServicioConvocatoria convocatoria, CancellationToken ct) =>
+        api.MapPost("/documentos/{id}/convocar", async (string id, ConvocarEntrada entrada, HttpContext c, ILegalarioClient legalario, IReferenciaDataProvider referencias, IPlantillaResolver resolver, PreparadorFirmantes preparadorFirmantes, ServicioConvocatoria convocatoria, AutorizacionLegalario autorizacion, CancellationToken ct) =>
         {
             var documento = await AutorizarDocumento(c, legalario, entrada.Agencia, id, ct);
             var datos = await referencias.ObtenerDatosReferenciaAsync(entrada.Referencia, ct);
@@ -159,7 +176,8 @@ public static class RutasFirma
                 throw new ArgumentException("Los tipos de firmante no corresponden a la plantilla.");
             var cuenta = PreparadorVariables.Texto(datos, "cta_cliente");
             if (string.IsNullOrWhiteSpace(cuenta)) cuenta = PreparadorVariables.Texto(datos, "CTA_CLIENTE");
-            return Results.Ok(await convocatoria.ConvocarAsync(id, cuenta, entrada.Firmantes, Token(c), ct));
+            var tokenConvocatoria = await TokenConvocatoriaAsync(c, autorizacion, ct, renovar: true);
+            return Results.Ok(await convocatoria.ConvocarAsync(id, cuenta, entrada.Firmantes, tokenConvocatoria, ct));
         });
         api.MapPost("/documentos/{id}/firmantes/{firmanteId}/reenviar", async (string id, string firmanteId, string agencia, HttpContext c, ILegalarioClient legalario, CancellationToken ct) =>
         {

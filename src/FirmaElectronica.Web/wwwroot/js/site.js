@@ -1,4 +1,4 @@
-import { ApiFirma, ErrorApi, esperarPreparacion } from './api.js';
+import { ApiFirma, ErrorApi, esperarPreparacion, enlaceFirma } from './api.js';
 const raiz = document.querySelector('#firma-app');
 if (raiz) iniciar();
 function iniciar() {
@@ -316,11 +316,11 @@ function iniciar() {
         const cantidad = actividades.filter(pendiente).length;
         $('#pendientes').textContent = cantidad; $('#pendientes').hidden = !cantidad;
         $('#actividad-vacia').hidden = actividades.length > 0;
-        $('#actividad-lista').innerHTML = actividades.map(a => `<article class="panel actividad-card"><span class="icono-suave">${pendiente(a) ? '<span class="spinner"></span>' : icono(a.documento ? 'check' : 'documento')}</span><div class="actividad-info"><h3>${esc(a.nombre || `Referencia ${a.referencia}`)}</h3><p>${esc(agenciaNombre(a.agencia))} · Referencia ${esc(a.referencia)}</p><span class="badge ${a.documento ? 'ok' : pendiente(a) ? 'proceso' : 'aviso'}">${esc(a.documento ? 'Documento creado' : a.estado === 'EnCola' ? 'En cola' : a.estado === 'Procesando' ? 'Preparando documento' : 'Requiere revisión')}</span>${a.mensaje ? `<p>${esc(a.mensaje)}</p>` : ''}</div><div class="actividad-acciones">${a.documento ? `<button class="boton secundario" data-accion="pdf-actividad" data-id="${esc(a.id)}">${icono('ojo')}Ver PDF</button><button class="boton primario" data-accion="firmas-actividad" data-id="${esc(a.id)}">${icono('enviar')}Revisar firmas</button>` : !pendiente(a) ? `<button class="boton secundario" data-accion="recuperar" data-id="${esc(a.id)}">Revisar generación</button>` : '<span class="muted">Puedes continuar trabajando</span>'}</div></article>`).join('');
+        $('#actividad-lista').innerHTML = actividades.map(a => `<article class="panel actividad-card"><span class="icono-suave">${pendiente(a) ? '<span class="spinner"></span>' : icono(a.documento ? 'check' : 'documento')}</span><div class="actividad-info"><h3>${esc(a.nombre || `Referencia ${a.referencia}`)}</h3><p>${esc(agenciaNombre(a.agencia))} · Referencia ${esc(a.referencia)}</p><span class="badge ${a.documento ? 'ok' : pendiente(a) ? 'proceso' : 'aviso'}">${esc(a.documento ? 'Documento creado' : a.estado === 'EnCola' ? 'En cola' : a.estado === 'Procesando' ? 'Preparando documento' : 'Requiere revisión')}</span>${a.mensaje ? `<p>${esc(a.mensaje)}</p>` : ''}</div><div class="actividad-acciones">${a.documento ? `<button class="boton secundario" data-accion="pdf-actividad" data-id="${esc(a.id)}">${icono('ojo')}Ver PDF</button><button class="boton primario" data-accion="firmas-actividad" data-id="${esc(a.id)}">${icono('enviar')}Convocar a firma</button>` : !pendiente(a) ? `<button class="boton secundario" data-accion="recuperar" data-id="${esc(a.id)}">Revisar generación</button>` : '<span class="muted">Puedes continuar trabajando</span>'}</div></article>`).join('');
     }
     async function consultarTrabajos() {
         if (!usuario || consultandoTrabajos) return;
-        const lista = actividades.filter(pendiente), actual = versionSesion;
+        const lista = actividades.filter(pendiente), actual = versionSesion, completados = [];
         if (!lista.length) return;
         consultandoTrabajos = true;
         try {
@@ -330,7 +330,7 @@ function iniciar() {
                     const resultado = await api.solicitar(`/api/documentos/trabajos/${encodeURIComponent(trabajo.id)}`);
                     if (actual !== versionSesion) break;
                     Object.assign(trabajo, { estado: resultado.estado, documento: resultado.documento, mensaje: resultado.mensaje || '', errores: 0 });
-                    if (resultado.documento) { trabajo.nombre = resultado.documento.nombre; paginaDocumentosCargada = false; }
+                    if (resultado.documento) { trabajo.nombre = resultado.documento.nombre; paginaDocumentosCargada = false; completados.push(trabajo.referencia); }
                 } catch (error) {
                     if (actual !== versionSesion) break;
                     trabajo.errores = (trabajo.errores || 0) + 1;
@@ -338,7 +338,12 @@ function iniciar() {
                     if (trabajo.errores >= 3 || error.estado === 404) trabajo.estado = 'RequiereRevision';
                 }
             }
-            if (actual === versionSesion) { pintarActividad(); guardarActividad(); }
+            if (actual === versionSesion) {
+                pintarActividad(); guardarActividad();
+                if (completados.length) void ventana({ title: completados.length === 1 ? 'Documento disponible' : 'Documentos disponibles',
+                    text: `Referencia${completados.length === 1 ? '' : 's'} ${completados.join(', ')}. Puedes abrir el PDF o seleccionar Convocar a firma.`,
+                    icon: 'success', confirmButtonText: 'Aceptar' });
+            }
         } finally { consultandoTrabajos = false; }
     }
     setInterval(consultarTrabajos, 2500);
@@ -370,7 +375,7 @@ function iniciar() {
             $('#total-documentos').textContent = `${total} ${total === 1 ? 'documento' : 'documentos'}`;
             $('#documentos-estado').hidden = documentos.length > 0;
             $('#documentos-estado').innerHTML = `<span class="vacio-icono">${icono('carpeta')}</span><h3>No hay documentos para esta consulta</h3><p>Prueba con otro nombre, VIN o tipo de expediente.</p>`;
-            $('#documentos-tabla').innerHTML = documentos.map((d, i) => `<tr><td><div class="doc-nombre"><span class="icono-suave">${icono('documento')}</span><div><strong>${esc(d.nombre.replace(/^Documentaci[oó]n_/, '').replaceAll('_', ' · '))}</strong><small>${esc(agenciaNombre(d.agencia))}</small></div></div></td><td>${esc(fechaCorta(d.creadoEn))}</td><td><button class="enlace" data-accion="firmas-doc" data-id="${esc(d.id)}" id="conteo-${i}" aria-label="Consultar firmas de ${esc(d.nombre)}">Consultar</button></td><td><div class="acciones-tabla"><button class="boton-icono" data-accion="pdf-doc" data-id="${esc(d.id)}" title="Ver PDF" aria-label="Ver PDF de ${esc(d.nombre)}">${icono('ojo')}</button><button class="boton-icono" data-accion="firmas-doc" data-id="${esc(d.id)}" title="Revisar firmas" aria-label="Revisar firmas de ${esc(d.nombre)}">${icono('enviar')}</button><button class="boton-icono borrar" data-accion="borrar-doc" data-id="${esc(d.id)}" title="Eliminar documento" aria-label="Eliminar ${esc(d.nombre)}">${icono('borrar')}</button></div></td></tr>`).join('');
+            $('#documentos-tabla').innerHTML = documentos.map((d, i) => `<tr><td><div class="doc-nombre"><span class="icono-suave">${icono('documento')}</span><div><strong>${esc(d.nombre.replace(/^Documentaci[oó]n_/, '').replaceAll('_', ' · '))}</strong><small>${esc(agenciaNombre(d.agencia))}</small></div></div></td><td>${esc(fechaCorta(d.creadoEn))}</td><td><button class="enlace" data-accion="firmas-doc" data-id="${esc(d.id)}" id="conteo-${i}" aria-label="Consultar firmas de ${esc(d.nombre)}">Consultar</button></td><td><div class="acciones-tabla"><button class="boton-icono" data-accion="pdf-doc" data-id="${esc(d.id)}" title="Ver PDF" aria-label="Ver PDF de ${esc(d.nombre)}">${icono('ojo')}</button><button class="boton-icono" data-accion="firmas-doc" data-id="${esc(d.id)}" title="Convocar a firma" aria-label="Convocar a firma de ${esc(d.nombre)}">${icono('enviar')}</button><button class="boton-icono" data-accion="enlaces-doc" data-id="${esc(d.id)}" title="Obtener enlace de firma" aria-label="Obtener enlace de firma de ${esc(d.nombre)}">${icono('enlace')}</button><button class="boton-icono borrar" data-accion="borrar-doc" data-id="${esc(d.id)}" title="Eliminar documento" aria-label="Eliminar ${esc(d.nombre)}">${icono('borrar')}</button></div></td></tr>`).join('');
             $('#detalle-pagina').textContent = total ? `${(pagina - 1) * 15 + 1}–${Math.min(pagina * 15, total)} de ${total}` : 'Sin resultados';
             $('#pagina-actual').textContent = pagina; $('#pagina-anterior').disabled = pagina <= 1; $('#pagina-siguiente').disabled = pagina * 15 >= total;
             // Tres consultas simultáneas como máximo, evitando cargar todas las firmas a la vez.
@@ -421,7 +426,8 @@ function iniciar() {
         } catch (error) { if (actual === versionPdf && modal.open) $('#pdf-estado').textContent = error.message || 'No se pudo abrir el PDF.'; }
     }
     $('#modal-pdf').addEventListener('close', () => { versionPdf++; $('#pdf-marco').removeAttribute('src'); if (pdfUrl) URL.revokeObjectURL(pdfUrl); pdfUrl = null; });
-    async function abrirFirmas(documento) {
+    async function abrirFirmas(documento, soloEnlaces = false) {
+        $('#titulo-firmas').textContent = soloEnlaces ? 'Enlaces de firma' : 'Convocar a firma';
         const actual = ++versionFirmas; documentoFirmas = documento;
         $('#nombre-firmas').textContent = documento.nombre; $('#firmas-mensaje').textContent = '';
         $('#firmas-contenido').innerHTML = '<span class="spinner"></span>Consultando firmantes…';
@@ -433,11 +439,27 @@ function iniciar() {
             });
             if (actual !== versionFirmas || !$('#modal-firmas').open) return;
             if (estado.convocados > 0) {
-                $('#firmas-contenido').innerHTML = `<span class="badge ${estado.firmados === 0 ? 'sin-firmas' : estado.firmados === estado.convocados ? 'ok' : 'proceso'}">${estado.firmados} de ${estado.convocados} personas han firmado</span>${estado.firmantes.map(f => `<div class="firmante-estado"><div><strong>${esc(f.fullname || f.name || 'Firmante')}</strong><p>${esc(f.type || '')} · ${esc(f.email || '')}</p></div><span class="badge ${f.status === 'confirmed' ? 'ok' : 'aviso'}">${f.status === 'confirmed' ? 'Firmado' : 'Pendiente'}</span>${f.status !== 'confirmed' ? `<button class="boton secundario" data-reenviar="${esc(f.id)}">Reenviar invitación</button>` : ''}</div>`).join('')}`;
+                $('#firmas-contenido').innerHTML = `<span class="badge ${estado.firmados === 0 ? 'sin-firmas' : estado.firmados === estado.convocados ? 'ok' : 'proceso'}">${estado.firmados} de ${estado.convocados} personas han firmado</span>${estado.firmantes.map(f => `<div class="firmante-estado"><div><strong>${esc(f.fullname || f.name || 'Firmante')}</strong><p>${esc(f.type || '')} · ${esc(f.email || '')}</p></div><span class="badge ${f.status === 'confirmed' ? 'ok' : 'aviso'}">${f.status === 'confirmed' ? 'Firmado' : 'Pendiente'}</span>${f.status !== 'confirmed' && !soloEnlaces ? `<button class="boton secundario" data-reenviar="${esc(f.id)}">Reenviar invitación</button>` : ''}<button class="boton secundario" data-enlace-firma="${esc(f.id)}">Obtener enlace</button></div>`).join('')}`;
+                $('#firmas-contenido').querySelectorAll('[data-enlace-firma]').forEach(b => b.onclick = async () => {
+                    try {
+                        const url = enlaceFirma(b.dataset.enlaceFirma);
+                        await ventana({ title: 'Enlace de firma', icon: 'info',
+                            html: `<p>Comparte este enlace con el firmante seleccionado:</p><p><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></p>`,
+                            input: 'text', inputValue: url, inputAttributes: { readonly: 'readonly', 'aria-label': 'Enlace de firma para copiar' },
+                            confirmButtonText: 'Copiar enlace', showCancelButton: true, cancelButtonText: 'Cerrar',
+                            preConfirm: async () => {
+                                try { await navigator.clipboard.writeText(url); return true; }
+                                catch { Swal.showValidationMessage('Selecciona el enlace y cópialo manualmente con Ctrl+C o ⌘C.'); return false; }
+                            }
+                        });
+                    } catch (error) { await notificar(error.message, 'error'); }
+                });
                 $('#firmas-contenido').querySelectorAll('[data-reenviar]').forEach(b => b.onclick = async () => {
                     if (!await pedirConfirmacion('Reenviar invitación', 'Se enviará una nueva invitación a este firmante.', 'Reenviar')) return;
                     await ocupado(b, 'Enviando…', async () => { try { await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/firmantes/${encodeURIComponent(b.dataset.reenviar)}/reenviar?agencia=${encodeURIComponent(documento.agencia)}`, { metodo: 'POST' }); $('#firmas-mensaje').textContent = api.ejemplo ? 'Reenvío simulado correctamente.' : 'Invitación reenviada.'; } catch (error) { $('#firmas-mensaje').textContent = error.message; } });
                 });
+            } else if (soloEnlaces) {
+                $('#firmas-contenido').textContent = 'Este documento todavía no tiene firmantes registrados. Los enlaces estarán disponibles después de convocar a firma.';
             } else {
                 $('#firmas-contenido').innerHTML = '<h3>Revisa los firmantes</h3><div id="form-firmantes-area"><span class="spinner"></span>Recuperando los contactos del expediente…</div>';
                 const preparada = await esperarPreparacion(() => api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/preparar-firmantes?agencia=${encodeURIComponent(documento.agencia)}`), {
@@ -482,7 +504,11 @@ function iniciar() {
                         vigente: () => version === versionFirmas && $('#modal-firmas').open,
                         onEspera: () => { if (version === versionFirmas) $('#firmas-mensaje').textContent = 'Legalario todavía no aceptó el envío. Esperando para volver a intentarlo…'; }
                     });
-                    notificar(resultado.avisoContacto || (api.ejemplo ? 'Convocatoria simulada correctamente.' : 'Invitaciones enviadas.'), resultado.avisoContacto ? '' : 'exito');
+                    await ventana({
+                        title: resultado.recuperada ? 'Convocatoria ya registrada' : api.ejemplo ? 'Convocatoria simulada' : 'Invitaciones enviadas correctamente',
+                        text: resultado.avisoContacto || 'Los firmantes ya pueden abrir su invitación para firmar el documento.',
+                        icon: resultado.recuperada ? 'info' : 'success', confirmButtonText: 'Aceptar', allowOutsideClick: false
+                    });
                     paginaDocumentosCargada = false;
                     if (version === versionFirmas && $('#modal-firmas').open) await abrirFirmas(documento);
                 } catch (error) {
@@ -545,6 +571,7 @@ function iniciar() {
             const actividad = actividades.find(a => a.id === id), documento = documentos.find(d => d.id === id);
             if (accion === 'pdf-doc' && documento) await abrirPdf(documento);
             if (accion === 'firmas-doc' && documento) await abrirFirmas(documento);
+            if (accion === 'enlaces-doc' && documento) await abrirFirmas(documento, true);
             if (accion === 'pdf-actividad' && actividad?.documento) await abrirPdf(documentoActividad(actividad));
             if (accion === 'firmas-actividad' && actividad?.documento) await abrirFirmas(documentoActividad(actividad));
             if (accion === 'recuperar' && actividad) await recuperar(actividad);

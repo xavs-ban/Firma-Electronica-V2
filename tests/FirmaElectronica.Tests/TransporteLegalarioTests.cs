@@ -61,7 +61,7 @@ public class TransporteLegalarioTests
             Assert.Equal("/v2/signers", r.RequestUri!.AbsolutePath);
             using var json = JsonDocument.Parse(await r.Content!.ReadAsStringAsync(ct));
             var raiz = json.RootElement;
-            Assert.False(raiz.GetProperty("workflow").GetBoolean());
+            Assert.False(raiz.TryGetProperty("workflow", out _));
             Assert.True(raiz.GetProperty("send_invite").GetBoolean());
             Assert.True(raiz.GetProperty("use_whatsapp").GetBoolean());
             Assert.Equal("REPRESENTANTE LEGAL", raiz.GetProperty("signers")[0].GetProperty("type").GetString());
