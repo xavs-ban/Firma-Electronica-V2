@@ -57,7 +57,7 @@ public sealed class GeneracionDocumentos(IReferenciaDataProvider referencias, IP
                 {
                     if (repetida.Huella != huella) throw new ArgumentException("La solicitud ya fue utilizada con otros datos.");
                     if (repetida.Documento is not null) return repetida.Documento;
-                    throw new InvalidOperationException("Esta solicitud ya fue procesada. Consulta su estado antes de repetirla.");
+                    // Un intento fallido puede volver a enviarse; sólo se reutilizan resultados confirmados.
                 }
             }
             async Task Guardar(IntentoDocumento intento, CancellationToken token)
@@ -66,14 +66,9 @@ public sealed class GeneracionDocumentos(IReferenciaDataProvider referencias, IP
                 if (claveOperacion is not null) await registro.GuardarAsync(intento with { Clave = claveOperacion }, token);
             }
             var existente = await registro.LeerAsync(clave, cancelacion);
-            if (existente?.Documento is not null)
-            {
-                if (existente.Huella != huella) throw new InvalidOperationException("La referencia ya tiene un documento con otros datos. Confirme una nueva generación antes de continuar.");
-                if (claveOperacion is not null)
-                    await registro.GuardarAsync(existente with { Clave = claveOperacion }, cancelacion);
+            if (claveOperacion is null && existente?.Documento is not null && existente.Huella == huella)
                 return existente.Documento;
-            }
-            if (existente is not null && existente.Documento is null && existente.Estado is not ("NuevoAutorizado" or "Rechazado")) throw new InvalidOperationException("Ya existe un intento para esta referencia y plantilla. Consulte y concilie el resultado antes de generar otra vez.");
+            // Una solicitud nueva puede generar nuevamente, aunque exista un intento anterior incierto.
             var intento = new IntentoDocumento(clave, huella, documento.Referencia, documento.Nombre, documento.PlantillaId, DateTimeOffset.UtcNow, "EnCurso", null);
             await Guardar(intento, cancelacion);
             try
@@ -87,7 +82,7 @@ public sealed class GeneracionDocumentos(IReferenciaDataProvider referencias, IP
                 await Guardar(intento with { Estado = e.ResultadoIncierto ? "Incierto" : "Rechazado" }, CancellationToken.None);
                 throw;
             }
-            // Si el proceso cae o falla la persistencia, EnCurso también bloquea un segundo envío.
+            // El historial conserva el resultado sin impedir que el usuario vuelva a intentar.
         }, ct);
     }
 }

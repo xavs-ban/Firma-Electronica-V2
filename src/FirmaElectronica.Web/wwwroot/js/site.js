@@ -37,7 +37,7 @@ function iniciar() {
     const claveGuardado = () => `firmaV2:trabajos:${usuario?.usuario || ''}`;
     function guardarActividad() {
         if (api.ejemplo || !usuario) return;
-        try { sessionStorage.setItem(claveGuardado(), JSON.stringify(actividades.map(({ id, referencia, agencia, plantilla }) => ({ id, referencia, agencia, plantilla })).slice(-100))); } catch { }
+        try { sessionStorage.setItem(claveGuardado(), JSON.stringify(actividades.map(({ id, referencia, agencia, plantilla, solicitud }) => ({ id, referencia, agencia, plantilla, solicitud })).slice(-100))); } catch { }
     }
     document.addEventListener('input', e => {
         if (e.target.matches('[data-numerico]')) e.target.value = e.target.value.replace(/[^0-9]/g, '');
@@ -306,13 +306,13 @@ function iniciar() {
                 encolando = true;
                 const trabajo = await api.solicitar('/api/documentos/trabajos', { metodo: 'POST', datos });
                 if (actual !== versionSesion) break;
-                actividades.unshift({ id: trabajo.id, referencia: ref.referencia, agencia: ref.agencia, plantilla: ref.plantilla, nombre: preparada.documento.nombre, estado: trabajo.estado, errores: 0 });
+                actividades.unshift({ id: trabajo.id, referencia: ref.referencia, agencia: ref.agencia, plantilla: ref.plantilla, nombre: preparada.documento.nombre, solicitud: datos, estado: trabajo.estado, errores: 0 });
                 ref.estado = 'enviado'; ref.mensaje = 'En preparación. Puedes consultar otra referencia mientras termina.';
                 guardarActividad(); pintarActividad(); paginaDocumentosCargada = false;
             } catch (error) {
                 if (actual !== versionSesion) break;
                 ref.estado = encolando ? 'enviado' : 'lista'; ref.mensaje = error.message;
-                if (encolando) { actividades.unshift({ id: `incierto-${nuevoId()}`, referencia: ref.referencia, agencia: ref.agencia, plantilla: ref.plantilla, estado: 'RequiereRevision', mensaje: error.message }); pintarActividad(); }
+                if (encolando) { actividades.unshift({ id: `incierto-${nuevoId()}`, referencia: ref.referencia, agencia: ref.agencia, plantilla: ref.plantilla, solicitud: entrada(ref), estado: 'RequiereRevision', mensaje: error.message }); guardarActividad(); pintarActividad(); }
                 notificar(error.message, 'error');
             }
             pintarReferencias();
@@ -325,7 +325,7 @@ function iniciar() {
         const cantidad = actividades.filter(pendiente).length;
         $('#pendientes').textContent = cantidad; $('#pendientes').hidden = !cantidad;
         $('#actividad-vacia').hidden = actividades.length > 0;
-        $('#actividad-lista').innerHTML = actividades.map(a => `<article class="panel actividad-card"><span class="icono-suave">${pendiente(a) ? '<span class="spinner"></span>' : icono(a.documento ? 'check' : 'documento')}</span><div class="actividad-info"><h3>${esc(a.nombre || `Referencia ${a.referencia}`)}</h3><p>${esc(agenciaNombre(a.agencia))} · Referencia ${esc(a.referencia)}</p><span class="badge ${a.documento ? 'ok' : pendiente(a) ? 'proceso' : 'aviso'}">${esc(a.documento ? 'Documento creado' : a.estado === 'EnCola' ? 'En cola' : a.estado === 'Procesando' ? 'Preparando documento' : 'Requiere revisión')}</span>${a.mensaje ? `<p>${esc(a.mensaje)}</p>` : ''}</div><div class="actividad-acciones">${a.documento ? `<button class="boton secundario" data-accion="pdf-actividad" data-id="${esc(a.id)}">${icono('ojo')}Ver PDF</button><button class="boton primario" data-accion="firmas-actividad" data-id="${esc(a.id)}">${icono('enviar')}Convocar a firma</button>` : !pendiente(a) ? `<button class="boton secundario" data-accion="recuperar" data-id="${esc(a.id)}">Revisar generación</button>` : '<span class="muted">Puedes continuar trabajando</span>'}</div></article>`).join('');
+        $('#actividad-lista').innerHTML = actividades.map(a => `<article class="panel actividad-card"><span class="icono-suave">${pendiente(a) ? '<span class="spinner"></span>' : icono(a.documento ? 'check' : 'documento')}</span><div class="actividad-info"><h3>${esc(a.nombre || `Referencia ${a.referencia}`)}</h3><p>${esc(agenciaNombre(a.agencia))} · Referencia ${esc(a.referencia)}</p><span class="badge ${a.documento ? 'ok' : pendiente(a) ? 'proceso' : 'aviso'}">${esc(a.documento ? 'Documento creado' : a.estado === 'EnCola' ? 'En cola' : a.estado === 'Procesando' ? 'Preparando documento' : 'Requiere revisión')}</span>${a.mensaje ? `<p>${esc(a.mensaje)}</p>` : ''}</div><div class="actividad-acciones">${a.documento ? `<button class="boton secundario" data-accion="pdf-actividad" data-id="${esc(a.id)}">${icono('ojo')}Ver PDF</button><button class="boton primario" data-accion="firmas-actividad" data-id="${esc(a.id)}">${icono('enviar')}Convocar a firma</button>` : !pendiente(a) ? `<button class="boton secundario" data-accion="recuperar" data-id="${esc(a.id)}">Reintentar generación</button>` : '<span class="muted">Puedes continuar trabajando</span>'}</div></article>`).join('');
     }
     async function consultarTrabajos() {
         if (!usuario || consultandoTrabajos) return;
@@ -344,7 +344,7 @@ function iniciar() {
                     if (actual !== versionSesion) break;
                     trabajo.errores = (trabajo.errores || 0) + 1;
                     trabajo.mensaje = error.message;
-                    if (trabajo.errores >= 3 || error.estado === 404) trabajo.estado = 'RequiereRevision';
+                    if (trabajo.errores >= 24 || error.estado === 404) trabajo.estado = 'RequiereRevision';
                 }
             }
             if (actual === versionSesion) {
@@ -416,7 +416,7 @@ function iniciar() {
     async function abrirPdf(documento) {
         controladorPdf?.abort();
         const controlador = controladorPdf = new AbortController();
-        const limite = setTimeout(() => controlador.abort(), 45000);
+        const limite = setTimeout(() => controlador.abort(), 90000);
         const actual = ++versionPdf, sesion = versionSesion, modal = $('#modal-pdf');
         if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
         $('#titulo-pdf').textContent = documento.nombre; $('#pdf-marco').hidden = true; $('#pdf-marco').removeAttribute('src'); $('#descargar-pdf').hidden = true;
@@ -424,7 +424,7 @@ function iniciar() {
         if (!modal.open) modal.showModal();
         try {
             const vista = await esperarPreparacion(() => consultarVistaPdf(api, documento, controlador.signal), {
-                signal: controlador.signal, reintentos: 2,
+                signal: controlador.signal, reintentos: 29,
                 vigente: () => actual === versionPdf && sesion === versionSesion && modal.open,
                 onEspera: () => { if (actual === versionPdf) $('#pdf-estado').textContent = 'La consulta del PDF no está disponible temporalmente. Volviendo a consultar el mismo documento…'; }
             });
@@ -461,6 +461,17 @@ function iniciar() {
             if (estado.convocados > 0) {
                 $('#titulo-firmas').textContent = 'Reenvío de invitaciones y enlace';
                 $('#firmas-contenido').innerHTML = `<span class="badge ${estado.firmados === 0 ? 'sin-firmas' : estado.firmados === estado.convocados ? 'ok' : 'proceso'}">${estado.firmados} de ${estado.convocados} personas han firmado</span>${estado.firmantes.map(f => `<div class="firmante-estado"><div><strong>${esc(f.fullname || f.name || 'Firmante')}</strong><p>${esc(f.type || '')} · ${esc(f.email || '')}</p></div><span class="badge ${f.status === 'confirmed' ? 'ok' : 'aviso'}">${f.status === 'confirmed' ? 'Firmado' : 'Pendiente'}</span>${f.status !== 'confirmed' ? `<button class="boton secundario" data-reenviar="${esc(f.id)}">Reenviar invitación</button>` : ''}<button class="boton secundario" data-enlace-firma="${esc(f.id)}">Obtener enlace</button></div>`).join('')}`;
+                $('#firmas-contenido').insertAdjacentHTML('beforeend', '<button id="completar-convocatoria" class="boton primario">Convocar a firma</button>');
+                $('#completar-convocatoria').onclick = async () => {
+                    await ocupado($('#completar-convocatoria'), 'Consultando contactos…', async () => {
+                        try {
+                            const preparada = await esperarPreparacion(() => api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/preparar-firmantes?agencia=${encodeURIComponent(documento.agencia)}`), { vigente: () => actual === versionFirmas && $('#modal-firmas').open });
+                            if (actual !== versionFirmas || !$('#modal-firmas').open) return;
+                            $('#firmas-contenido').innerHTML = '<p>Se reenviarán las invitaciones pendientes a los contactos registrados en Legalario y se convocará a los firmantes que falten.</p><div id="form-firmantes-area"></div>';
+                            pintarFirmantes(preparada.firmantes, preparada.referencia, documento, actual);
+                        } catch (error) { $('#firmas-mensaje').textContent = error.message; }
+                    });
+                };
                 $('#firmas-contenido').querySelectorAll('[data-enlace-firma]').forEach(b => b.onclick = async () => {
                     try {
                         const url = enlaceFirma(b.dataset.enlaceFirma);
@@ -507,79 +518,59 @@ function iniciar() {
         });
         $('#form-enviar-firmas').onsubmit = async e => {
             e.preventDefault(); const form = e.currentTarget;
-            if (!form.reportValidity()) return;
+            if (form.querySelector('[type=submit]').disabled || !form.reportValidity()) return;
             const firmantes = lista.map((f, i) => ({ nombre: form.elements[`nombre-${i}`].value.trim(), correo: form.elements[`correo-${i}`].value.trim(), telefono: form.elements[`telefono-${i}`].value.trim(), tipoFirmante: f.tipoFirmante, firmaEnTodasLasHojas: false }));
             if (version !== versionFirmas) return;
             await ocupado(form.querySelector('[type=submit]'), 'Preparando y enviando…', async () => {
                 $('#firmas-mensaje').textContent = 'Validando el documento, actualizando contacto y enviando invitaciones…';
                 const controladorEnvio = new AbortController();
-                const limiteEnvio = setTimeout(() => controladorEnvio.abort(), 130000);
+                const limiteEnvio = setTimeout(() => controladorEnvio.abort(), 195000);
                 const avisoEspera = setTimeout(() => {
                     if (version === versionFirmas) $('#firmas-mensaje').textContent = 'La respuesta está tardando. No vuelvas a enviar; al terminar podrás consultar si las invitaciones quedaron registradas.';
                 }, 20000);
                 try {
                     const resultado = await esperarPreparacion(() => api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/convocar`, { metodo: 'POST', datos: { referencia, agencia: documento.agencia, firmantes }, signal: controladorEnvio.signal }), {
-                        signal: controladorEnvio.signal, reintentos: 1,
+                        signal: controladorEnvio.signal, reintentos: 0,
                         vigente: () => version === versionFirmas && $('#modal-firmas').open,
                         onEspera: () => { if (version === versionFirmas) $('#firmas-mensaje').textContent = 'Legalario todavía no aceptó el envío. Esperando para volver a intentarlo…'; }
                     });
                     await ventana({
-                        title: resultado.recuperada ? 'Convocatoria ya registrada' : api.ejemplo ? 'Convocatoria simulada' : 'Invitaciones enviadas correctamente',
-                        text: resultado.avisoContacto || 'Los firmantes ya pueden abrir su invitación para firmar el documento.',
-                        icon: resultado.recuperada ? 'info' : 'success', confirmButtonText: 'Aceptar', allowOutsideClick: false
+                        title: api.ejemplo ? 'Convocatoria simulada' : resultado.reenviadas ? 'Invitaciones reenviadas correctamente' : resultado.nuevos === 0 ? 'Firmas completadas' : 'Invitaciones enviadas correctamente',
+                        text: [resultado.reenviadas ? `Se reenviaron ${resultado.reenviadas} invitaciones a los contactos registrados en Legalario.${resultado.nuevos ? ` También se convocó a ${resultado.nuevos} firmantes faltantes.` : ''}` : resultado.nuevos === 0 ? 'Todos los firmantes registrados ya firmaron.' : 'Los firmantes ya pueden abrir su invitación para firmar el documento.', resultado.avisoContacto].filter(Boolean).join(' '),
+                        icon: 'success', confirmButtonText: 'Aceptar', allowOutsideClick: false
                     });
                     paginaDocumentosCargada = false;
                     if (version === versionFirmas && $('#modal-firmas').open) await abrirFirmas(documento);
                 } catch (error) {
                     if (version === versionFirmas) {
-                        $('#firmas-mensaje').textContent = `${error.name === 'AbortError' ? 'Se agotó el tiempo de espera y no pudimos confirmar el envío.' : error.message} Consulta las firmas antes de enviar nuevamente.`;
-                        if (error.incierto || error.name === 'AbortError') form.querySelector('[type=submit]').dataset.noRepetir = 'true';
+                        $('#firmas-mensaje').textContent = `${error.name === 'AbortError' ? 'Se agotó el tiempo de espera y no pudimos confirmar el envío.' : error.message} Puedes volver a intentar el envío.`;
                         const revisar = document.createElement('button'); revisar.type = 'button'; revisar.className = 'boton secundario'; revisar.textContent = 'Consultar firmas'; revisar.onclick = () => abrirFirmas(documento); form.append(revisar);
                     }
                 } finally { clearTimeout(limiteEnvio); clearTimeout(avisoEspera); }
             });
-            const boton = form.querySelector('[type=submit]'); if (boton?.dataset.noRepetir) boton.disabled = true;
         };
     }
     $('#modal-firmas').addEventListener('close', () => { versionFirmas++; documentoFirmas = null; });
     async function recuperar(actividad) {
-        const modal = $('#modal-recuperar'); $('#recuperar-contenido').innerHTML = '<span class="spinner"></span>Consultando el intento…'; if (!modal.open) modal.showModal();
-        const sesion = versionSesion, query = new URLSearchParams({ agencia: actividad.agencia, plantilla: actividad.plantilla });
-        const ruta = `/api/intentos/${encodeURIComponent(actividad.referencia)}`;
-        const controlador = new AbortController();
-        const limite = setTimeout(() => controlador.abort(), 60000);
-        const cancelar = () => controlador.abort();
-        modal.addEventListener('close', cancelar, { once: true });
-        try {
-            const intento = await api.solicitar(`${ruta}?${query}`, { signal: controlador.signal }); if (!modal.open || sesion !== versionSesion) return;
-            $('#recuperar-contenido').innerHTML = `<p><strong>Referencia ${esc(actividad.referencia)}</strong></p><p class="muted" style="margin:8px 0 17px">Estado del intento: ${esc(intento.estado)}.</p><div id="recuperar-acciones"></div>`;
-            if (intento.documento || intento.estado === 'Rechazado') {
-                if (intento.documento) { actividad.documento = intento.documento; actividad.estado = 'Completado'; actividad.mensaje = ''; pintarActividad(); }
-                $('#recuperar-acciones').innerHTML = `${intento.documento ? '<p class="muted">El documento está confirmado. Puedes continuar con su revisión.</p><button id="pdf-recuperado" class="boton secundario" style="margin-top:15px">Ver PDF</button>' : '<p class="muted">La creación fue rechazada. Puedes consultar la referencia y generar nuevamente.</p>'}`;
-                $('#pdf-recuperado')?.addEventListener('click', () => abrirPdf(documentoActividad(actividad)));
-
-            } else {
-                $('#recuperar-acciones').innerHTML = '<p role="status"><span class="spinner"></span>Buscando el documento en Legalario…</p><p class="ayuda">La creación quedó sin confirmar. Esta consulta busca el documento existente; no genera otro.</p>';
-                const candidatos = await api.solicitar(`${ruta}/candidatos?${query}`, { signal: controlador.signal }); if (!modal.open || sesion !== versionSesion) return;
-                $('#recuperar-acciones').innerHTML = `<p class="muted">Revisa el PDF y su fecha antes de asociarlo. La lista puede incluir generaciones anteriores del mismo expediente; confirma que sus datos correspondan a esta solicitud.</p>${candidatos.length ? candidatos.map((c, i) => `<div class="recuperacion-card"><p>${esc(c.name)}</p><small class="muted">${esc(fechaCorta(c.created_at))}</small><div class="acciones"><button data-candidato-pdf="${i}" class="boton secundario">Ver PDF</button><button data-candidato-confirmar="${i}" class="boton primario">Asociar documento</button></div></div>`).join('') : '<p class="ayuda">No encontramos un candidato todavía. Consulta nuevamente más tarde; no generes otro documento mientras el resultado sea incierto.</p>'}`;
-                $('#recuperar-acciones').insertAdjacentHTML('beforeend', '<button id="consultar-recuperacion" class="boton secundario" style="margin-top:15px">Volver a consultar</button>');
-                $('#consultar-recuperacion').onclick = () => recuperar(actividad);
-                $('#recuperar-acciones').querySelectorAll('[data-candidato-pdf]').forEach(b => b.onclick = () => abrirPdf(normalizarDocumento(candidatos[Number(b.dataset.candidatoPdf)], actividad.agencia)));
-                $('#recuperar-acciones').querySelectorAll('[data-candidato-confirmar]').forEach(b => b.onclick = async () => {
-                    const candidato = candidatos[Number(b.dataset.candidatoConfirmar)];
-                    await ocupado(b, 'Asociando…', async () => { try { actividad.documento = await api.solicitar(`${ruta}/confirmar?${query}`, { metodo: 'POST', datos: { documentoId: candidato.id } }); actividad.estado = 'Completado'; actividad.mensaje = ''; pintarActividad(); await cerrarModal(modal); notificar('Documento recuperado.', 'exito'); } catch (error) { notificar(error.message, 'error'); } });
-                });
-            }
-        } catch (error) {
-            if (modal.open && sesion === versionSesion) {
-                const mensaje = error.name === 'AbortError' ? 'Legalario está tardando en responder. Aún no podemos confirmar si el documento se creó. Puedes volver a consultar sin generar otro.' : error.estado === 404 ? 'No encontramos un intento registrado. Si acabas de generar, espera unos momentos y consulta de nuevo desde Actividad.' : error.message;
-                $('#recuperar-contenido').innerHTML = `<p role="status">${esc(mensaje)}</p><button id="reintentar-recuperacion" class="boton secundario" style="margin-top:15px">Volver a consultar</button>`;
-                $('#reintentar-recuperacion').onclick = () => recuperar(actividad);
-            }
-        } finally {
-            clearTimeout(limite);
-            modal.removeEventListener('close', cancelar);
+        if (pendiente(actividad)) return;
+        if (!actividad.solicitud) {
+            cambiarVista('generar');
+            $('#referencia').value = actividad.referencia; $('#referencia').focus();
+            notificar(`Consulta nuevamente la referencia ${actividad.referencia} para generar el documento.`, 'info');
+            return;
         }
+        const sesion = versionSesion;
+        actividad.estado = 'EnCola'; actividad.mensaje = 'Reintentando la generación…'; pintarActividad();
+        try {
+            actividad.solicitud = { ...actividad.solicitud, operacionId: nuevoId() };
+            const trabajo = await api.solicitar('/api/documentos/trabajos', { metodo: 'POST', datos: actividad.solicitud });
+            if (sesion !== versionSesion) return;
+            Object.assign(actividad, { id: trabajo.id, estado: trabajo.estado, errores: 0, mensaje: '' });
+        } catch (error) {
+            if (sesion !== versionSesion) return;
+            actividad.estado = 'Error'; actividad.mensaje = error.message;
+        }
+        if (sesion === versionSesion) { guardarActividad(); pintarActividad(); }
     }
     document.addEventListener('click', async evento => {
         const cerrar = evento.target.closest('[data-cerrar]'); if (cerrar) return cerrarModal(document.getElementById(cerrar.dataset.cerrar));

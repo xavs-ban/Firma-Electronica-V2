@@ -21,7 +21,7 @@ El cliente HTTP dedicado tiene su timeout general desactivado; el cliente de cre
 
 ## Resultado incierto
 
-Un corte de red, interrupción de lectura, timeout, cancelación durante el envío, error 5xx, HTTP 408, redirección o respuesta exitosa sin identificador produce `CreacionDocumentoException` con `ResultadoIncierto = true`. El documento podría haberse creado. Los errores HTTP 4xx restantes se reportan como rechazo, conservando el código HTTP. Ningún caso se reintenta automáticamente.
+Un corte de red, interrupción de lectura, timeout, cancelación durante el envío, error 5xx, HTTP 408, redirección o respuesta exitosa sin identificador produce `CreacionDocumentoException` con `ResultadoIncierto = true`. El documento podría haberse creado. Los errores HTTP 4xx restantes se reportan como rechazo, conservando el código HTTP. La cola reintenta respuestas inciertas y HTTP 429 hasta tres intentos, separados por cinco segundos, dentro de un plazo total de 180 segundos. Los rechazos de validación no se repiten automáticamente.
 
 Una cancelación previa al envío mantiene `OperationCanceledException` y no realiza la petición. Durante el envío se considera incierta porque cancelar la espera local no revierte la operación remota.
 

@@ -1,3 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using FirmaElectronica.Web.Api;
 using System.Text.Json;
 using FirmaElectronica.Application.Abstractions;
 using FirmaElectronica.Application.Services;
@@ -19,7 +22,7 @@ public class FlujoDocumentosTests : IDisposable
         Assert.Equal(1, cliente.Convocatorias);
     }
     [Fact]
-    public async Task NuevaSolicitudReutilizaDocumentoYExigeAutorizacionParaCambiarDatos()
+    public async Task NuevaSolicitudGeneraSinAsociacionYRepetirMismaOperacionReutilizaResultado()
     {
         var cliente = new LegalarioFalso();
         var servicio = Generacion(cliente);
@@ -27,25 +30,24 @@ public class FlujoDocumentosTests : IDisposable
         var segunda = Documento with { OperacionId = Guid.NewGuid() };
         await servicio.CrearAsync("u", primera, "token", default);
         await servicio.CrearAsync("u", segunda, "token", default);
-        Assert.Equal(1, cliente.Creaciones);
+        Assert.Equal(2, cliente.Creaciones);
         await servicio.CrearAsync("u", primera, "token", default);
         await servicio.CrearAsync("u", segunda, "token", default);
-        Assert.Equal(1, cliente.Creaciones);
-        var cambiada = Documento with { OperacionId = Guid.NewGuid(), Variables = new Dictionary<int, string> { [1] = "Otro dato" } };
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.CrearAsync("u", cambiada, "token", default));
-        await servicio.AutorizarNuevaGeneracionAsync("u", "ref", "plantilla", "d", default);
-        await servicio.CrearAsync("u", cambiada, "token", default);
-        // Las claves de operaciones anteriores siguen ligadas a su resultado original.
-        await servicio.CrearAsync("u", segunda, "token", default);
         Assert.Equal(2, cliente.Creaciones);
+        var cambiada = Documento with { OperacionId = Guid.NewGuid(), Variables = new Dictionary<int, string> { [1] = "Otro dato" } };
+        await servicio.CrearAsync("u", cambiada, "token", default);
+        await servicio.CrearAsync("u", segunda, "token", default);
+        Assert.Equal(3, cliente.Creaciones);
+        await Assert.ThrowsAsync<ArgumentException>(() => servicio.CrearAsync("u", cambiada with { Variables = Documento.Variables }, "token", default));
     }
     [Fact]
-    public async Task NuevaSolicitudNoDuplicaUnResultadoTodaviaIncierto()
+    public async Task NuevaSolicitudPuedeReintentarUnResultadoIncierto()
     {
         var cliente = new LegalarioFalso { FallarCreacion = true };
         await Assert.ThrowsAsync<CreacionDocumentoException>(() => Generacion(cliente).CrearAsync("u", Documento with { OperacionId = Guid.NewGuid() }, "token", default));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Generacion(cliente).CrearAsync("u", Documento with { OperacionId = Guid.NewGuid() }, "token", default));
-        Assert.Equal(1, cliente.Creaciones);
+        cliente.FallarCreacion = false;
+        await Generacion(cliente).CrearAsync("u", Documento with { OperacionId = Guid.NewGuid() }, "token", default);
+        Assert.Equal(2, cliente.Creaciones);
     }
     [Fact]
     public async Task RecuperaReferenciaPorDocumentoTrasReiniciarRegistro()
@@ -70,7 +72,8 @@ public class FlujoDocumentosTests : IDisposable
     public async Task DosSolicitudesConcurrentesCreanUnaSolaVez()
     {
         var cliente = new LegalarioFalso();
-        var resultados = await Task.WhenAll(Generacion(cliente).CrearAsync("u", Documento with { OperacionId = Guid.NewGuid() }, "token", default), Generacion(cliente).CrearAsync("u", Documento with { OperacionId = Guid.NewGuid() }, "token", default));
+        var solicitud = Documento with { OperacionId = Guid.NewGuid() };
+        var resultados = await Task.WhenAll(Generacion(cliente).CrearAsync("u", solicitud, "token", default), Generacion(cliente).CrearAsync("u", solicitud, "token", default));
         Assert.Equal(1, cliente.Creaciones); Assert.Equal(resultados[0], resultados[1]);
         Assert.Equal(resultados[0], await Generacion(cliente).CrearAsync("u", Documento, "token", default));
         Assert.Equal(1, cliente.Creaciones);
@@ -80,8 +83,8 @@ public class FlujoDocumentosTests : IDisposable
     {
         var cliente = new LegalarioFalso { FallarCreacion = true };
         await Assert.ThrowsAsync<CreacionDocumentoException>(() => Generacion(cliente).CrearAsync("u", Documento, "token", default));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Generacion(cliente).CrearAsync("u", Documento, "token", default));
-        Assert.Equal(1, cliente.Creaciones);
+        await Assert.ThrowsAsync<CreacionDocumentoException>(() => Generacion(cliente).CrearAsync("u", Documento, "token", default));
+        Assert.Equal(2, cliente.Creaciones);
         var registro = new RegistroIntentosArchivo(carpeta);
         Assert.Equal("Incierto", (await registro.LeerAsync(GeneracionDocumentos.Clave("u", "ref", "plantilla"), default))!.Estado);
         Assert.DoesNotContain("token", await File.ReadAllTextAsync(Directory.GetFiles(carpeta, "*.json").Single()));
@@ -96,15 +99,15 @@ public class FlujoDocumentosTests : IDisposable
         Assert.Equal(0, cliente.Creaciones);
     }
     [Fact]
-    public async Task QuiterFallidoPermiteConvocarConAvisoYNoRepiteConvocatoria()
+    public async Task QuiterFallidoPermiteConvocarYReintentarSiNoHayFirmantes()
     {
         var legalario = new LegalarioFalso();
         var servicio = new ServicioConvocatoria(legalario, new QuiterFalso(), new RegistroIntentosArchivo(carpeta));
         Firmante[] firmantes = [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)];
         var resultado = await servicio.ConvocarAsync("d", "cta", firmantes, "token", default);
         Assert.False(resultado.ContactoActualizado); Assert.NotNull(resultado.AvisoContacto); Assert.Equal(1, legalario.Convocatorias);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ConvocarAsync("d", "cta", firmantes, "token", default));
-        Assert.Equal(1, legalario.Convocatorias);
+        await servicio.ConvocarAsync("d", "cta", firmantes, "token", default);
+        Assert.Equal(2, legalario.Convocatorias);
     }
     [Fact]
     public async Task DocumentosSeOrdenanGlobalmenteEntrePlantillasYPaginas()
@@ -115,15 +118,13 @@ public class FlujoDocumentosTests : IDisposable
         Assert.Equal(new[] { "b2", "a2" }, pagina.Documentos.Select(d => d.GetProperty("id").GetString()));
     }
     [Fact]
-    public async Task DatosModificadosExigenNuevaGeneracionExplicita()
+    public async Task DatosModificadosPermitenGenerarSinAsociarDocumento()
     {
         var cliente = new LegalarioFalso();
         var servicio = Generacion(cliente);
         await servicio.CrearAsync("u", Documento, "token", default);
         var cambiado = Documento with { Variables = new Dictionary<int, string> { [1] = "Otro nombre" } };
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.CrearAsync("u", cambiado, "token", default));
         await Assert.ThrowsAsync<ArgumentException>(() => servicio.AutorizarNuevaGeneracionAsync("u", "ref", "plantilla", "otro-id", default));
-        await servicio.AutorizarNuevaGeneracionAsync("u", "ref", "plantilla", "d", default);
         await servicio.CrearAsync("u", cambiado, "token", default);
         Assert.Equal(2, cliente.Creaciones);
         Assert.NotEmpty(Directory.GetFiles(Path.Combine(carpeta, "historial")));
@@ -172,7 +173,7 @@ public class FlujoDocumentosTests : IDisposable
         Assert.Equal(0, cliente.Creaciones);
     }
     [Fact]
-    public async Task TiempoAgotadoDeQuiterNoImpideInvitarNiPermiteDuplicar()
+    public async Task TiempoAgotadoDeQuiterNoImpideInvitarNiReintentar()
     {
         var cliente = new LegalarioFalso();
         var servicio = new ServicioConvocatoria(cliente, new QuiterAgotado(), new RegistroIntentosArchivo(carpeta));
@@ -181,8 +182,8 @@ public class FlujoDocumentosTests : IDisposable
         Assert.False(resultado.ContactoActualizado);
         Assert.NotNull(resultado.AvisoContacto);
         Assert.Equal(1, cliente.Convocatorias);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ConvocarAsync("d", "cuenta", firmantes, "token", default));
-        Assert.Equal(1, cliente.Convocatorias);
+        await servicio.ConvocarAsync("d", "cuenta", firmantes, "token", default);
+        Assert.Equal(2, cliente.Convocatorias);
     }
     [Fact]
     public async Task EsperaRepositorioDeFirmantesSinExigirLigaOPdf()
@@ -206,12 +207,12 @@ public class FlujoDocumentosTests : IDisposable
         Assert.Equal(estado, (await registro.LeerAsync(GeneracionDocumentos.Clave("CONVOCATORIA", "d", "FIRMANTES"), default))!.Estado);
         cliente.ErrorConvocatoria = null;
         await servicio.ConvocarAsync("d", null, firmantes, "token", default);
-        Assert.Equal(2, cliente.Convocatorias);
+        Assert.Equal(temporal ? 4 : 2, cliente.Convocatorias);
     }
     [Theory]
     [InlineData("EnCurso")]
     [InlineData("Incierto")]
-    public async Task ConvocatoriaInciertaSeConciliaSinReenviarAunquePrimeroNoAparezcanFirmantes(string estado)
+    public async Task HistorialNoBloqueaEnvioYFirmantesPendientesSeReenvian(string estado)
     {
         var registro = new RegistroIntentosArchivo(carpeta);
         var clave = GeneracionDocumentos.Clave("CONVOCATORIA", "d", "FIRMANTES");
@@ -219,17 +220,16 @@ public class FlujoDocumentosTests : IDisposable
         var cliente = new LegalarioFalso();
         var servicio = new ServicioConvocatoria(cliente, new QuiterFalso(), registro);
         Firmante[] firmantes = [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)];
-        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => servicio.ConvocarAsync("d", null, firmantes, "token", default));
-        Assert.True(error.ResultadoIncierto);
-        Assert.False(error.Reintentable);
+        await servicio.ConvocarAsync("d", null, firmantes, "token", default);
         cliente.FirmantesExistentes = 1;
         var recuperada = await servicio.ConvocarAsync("d", null, firmantes, "token", default);
         Assert.True(recuperada.Recuperada);
-        Assert.Equal("Conciliado", (await registro.LeerAsync(clave, default))!.Estado);
-        Assert.Equal(0, cliente.Convocatorias);
+        Assert.Equal("ConvocadoSinContactoQuiter", (await registro.LeerAsync(clave, default))!.Estado);
+        Assert.Equal(1, cliente.Convocatorias);
+        Assert.Equal(1, cliente.Reenvios);
     }
     [Fact]
-    public async Task PostInciertoQuedaPersistidoYNoSeRepite()
+    public async Task PostInciertoReintentaTresVecesYPermiteOtroIntentoManual()
     {
         var cliente = new LegalarioFalso { ErrorConvocatoria = new("Timeout", resultadoIncierto: true) };
         var registro = new RegistroIntentosArchivo(carpeta);
@@ -237,9 +237,10 @@ public class FlujoDocumentosTests : IDisposable
         Firmante[] firmantes = [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)];
         await Assert.ThrowsAsync<OperacionLegalarioException>(() => servicio.ConvocarAsync("d", null, firmantes, "token", default));
         Assert.Equal("Incierto", (await registro.LeerAsync(GeneracionDocumentos.Clave("CONVOCATORIA", "d", "FIRMANTES"), default))!.Estado);
+        Assert.Equal(3, cliente.Convocatorias);
         cliente.ErrorConvocatoria = null;
-        await Assert.ThrowsAsync<OperacionLegalarioException>(() => servicio.ConvocarAsync("d", null, firmantes, "token", default));
-        Assert.Equal(1, cliente.Convocatorias);
+        await servicio.ConvocarAsync("d", null, firmantes, "token", default);
+        Assert.Equal(4, cliente.Convocatorias);
     }
     [Fact]
     public async Task CancelarEsperaNoRegistraNiEnviaConvocatoria()
@@ -251,6 +252,57 @@ public class FlujoDocumentosTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => servicio.ConvocarAsync("d", null, [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)], "token", cancelacion.Token));
         Assert.Null(await registro.LeerAsync(GeneracionDocumentos.Clave("CONVOCATORIA", "d", "FIRMANTES"), default));
         Assert.Equal(0, cliente.Convocatorias);
+    }
+    [Theory]
+    [InlineData("Convocado")]
+    [InlineData("Conciliado")]
+    [InlineData("ConvocadoSinContactoQuiter")]
+    public async Task RegistroPrevioNoEsPruebaDeEnvio(string estado)
+    {
+        var registro = new RegistroIntentosArchivo(carpeta);
+        await registro.GuardarAsync(new(GeneracionDocumentos.Clave("CONVOCATORIA", "d", "FIRMANTES"), "", "d", "Convocatoria", "FIRMANTES", DateTimeOffset.UtcNow, estado, null), default);
+        var cliente = new LegalarioFalso { FallosRestantes = 1 };
+        var resultado = await new ServicioConvocatoria(cliente, new QuiterFalso(), registro).ConvocarAsync("d", null,
+            [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)], "token", default);
+        Assert.Equal(2, cliente.Convocatorias);
+        Assert.Equal(1, resultado.Nuevos);
+    }
+    [Fact]
+    public async Task RegistroParcialReenviaPendientesYConvocaFaltantesSinTocarFirmados()
+    {
+        var cliente = new LegalarioFalso { FirmantesRespuesta = [
+            JsonSerializer.SerializeToElement(new { id = "apv", type = "APV", status = "confirmed" }),
+            JsonSerializer.SerializeToElement(new { id = "gerente", type = "GERENTE DE VENTAS", status = "pending" })] };
+        var resultado = await new ServicioConvocatoria(cliente, new QuiterFalso(), new RegistroIntentosArchivo(carpeta)).ConvocarAsync("d", null,
+            [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente),
+             new("Luis", "luis@example.com", "5512345678", TipoFirmante.Apv),
+             new("Juan", "juan@example.com", "5512345678", TipoFirmante.GerenteDeVentas)], "token", default);
+        Assert.Equal(1, cliente.Reenvios);
+        Assert.Equal(1, cliente.Convocatorias);
+        Assert.Equal(1, resultado.Nuevos);
+        Assert.Equal(1, resultado.Reenviadas);
+        Assert.Equal(TipoFirmante.Cliente, Assert.Single(cliente.UltimosFirmantes!).TipoFirmante);
+        Assert.Equal("gerente", Assert.Single(cliente.IdsReenviados));
+    }
+    [Theory]
+    [InlineData(1, "Completado", 2)]
+    [InlineData(5, "Error", 3)]
+    public async Task ColaReintentaFalloTemporalSinDejarBloqueadoElTrabajo(int fallos, string esperado, int intentos)
+    {
+        var cliente = new LegalarioFalso { FallosCreacionRestantes = fallos };
+        using var proveedor = new ServiceCollection().AddScoped(_ => Generacion(cliente)).BuildServiceProvider();
+        using var cola = new ColaGeneracionDocumentos(proveedor.GetRequiredService<IServiceScopeFactory>(), NullLogger<ColaGeneracionDocumentos>.Instance);
+        await cola.StartAsync(default);
+        try
+        {
+            var trabajo = cola.Encolar("u", Documento with { OperacionId = Guid.NewGuid() }, "token");
+            var inicio = DateTimeOffset.UtcNow;
+            while (cola.Consultar(trabajo.Id, "u").Estado is "EnCola" or "Procesando" && DateTimeOffset.UtcNow - inicio < TimeSpan.FromSeconds(20))
+                await Task.Delay(25);
+            Assert.Equal(esperado, cola.Consultar(trabajo.Id, "u").Estado);
+            Assert.Equal(intentos, cliente.Creaciones);
+        }
+        finally { await cola.StopAsync(default); }
     }
     private sealed class QuiterAgotado : IQuiterClient
     {
@@ -264,7 +316,11 @@ public class FlujoDocumentosTests : IDisposable
     { public Task ActualizarContactoClienteAsync(ContactoClienteQuiter contacto, CancellationToken cancellationToken) => throw new InvalidOperationException("Error simulado"); }
     private sealed class LegalarioFalso : ILegalarioClient
     {
-        public int Creaciones, Convocatorias, Consultas;
+        public int Creaciones, Convocatorias, Consultas, Reenvios;
+        public IReadOnlyCollection<Firmante>? UltimosFirmantes;
+        public List<string> IdsReenviados = new();
+        public JsonElement[]? FirmantesRespuesta;
+        public int FallosRestantes, FallosCreacionRestantes;
         public bool SoloLiga, SinDescarga;
         public int ConsultasPendientes, ConsultasFirmas, FirmantesExistentes;
         public OperacionLegalarioException? ErrorConvocatoria;
@@ -275,7 +331,7 @@ public class FlujoDocumentosTests : IDisposable
         public async Task<DocumentoGenerado> CrearDocumentoAsync(DocumentoParaCrear documento, string token, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref Creaciones); await Task.Delay(50, cancellationToken);
-            if (FallarCreacion) throw new CreacionDocumentoException("Incierto", true);
+            if (FallarCreacion || FallosCreacionRestantes-- > 0) throw new CreacionDocumentoException("Incierto", true);
             return new(documento.Referencia, documento.Nombre, "d", DateTimeOffset.UtcNow);
         }
         public Task<PaginaLegalario> ConsultarPaginaAsync(string plantilla, int pagina, int cantidad, string? busqueda, string token, CancellationToken ct)
@@ -296,15 +352,17 @@ public class FlujoDocumentosTests : IDisposable
         {
             ConsultasFirmas++;
             if (ConsultasPendientes-- > 0) throw new OperacionLegalarioException("Repositorio pendiente", 404, reintentable: true);
-            return Task.FromResult(new EstadoFirmas(0, FirmantesExistentes, []));
+            var lista = FirmantesRespuesta ?? Enumerable.Range(0, FirmantesExistentes).Select(i => JsonSerializer.SerializeToElement(new { id = "f" + i, type = "CLIENTE", status = "pending" })).ToArray();
+            return Task.FromResult(new EstadoFirmas(lista.Count(f => f.GetProperty("status").GetString() == "confirmed"), lista.Length, lista));
         }
         public Task ConvocarFirmantesAsync(string documentoId, IReadOnlyCollection<Firmante> firmantes, string token, CancellationToken ct)
         {
-            Convocatorias++;
+            Convocatorias++; UltimosFirmantes = firmantes;
+            if (FallosRestantes-- > 0) throw new OperacionLegalarioException("Preparando", 503, reintentable: true);
             if (ErrorConvocatoria is not null) throw ErrorConvocatoria;
             return Task.CompletedTask;
         }
-        public Task ReenviarInvitacionAsync(string firmanteId, string token, CancellationToken ct) => throw new NotImplementedException();
+        public Task ReenviarInvitacionAsync(string firmanteId, string token, CancellationToken ct) { Reenvios++; IdsReenviados.Add(firmanteId); return Task.CompletedTask; }
         public Task EliminarDocumentoAsync(string documentoId, string token, CancellationToken ct) => throw new NotImplementedException();
     }
     public void Dispose() { if (Directory.Exists(carpeta)) Directory.Delete(carpeta, true); }

@@ -166,7 +166,7 @@ public class ApiFirmaTests
         var entrada = new GenerarEntrada(new("ref", "306", "CON", new(2026, 9, 8), false), new("1001", new(2026, 9, 8), null), Guid.NewGuid());
         Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos", entrada)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos", entrada with { OperacionId = Guid.NewGuid() })).StatusCode);
-        Assert.Equal(1, aplicacion.Creaciones);
+        Assert.Equal(2, aplicacion.Creaciones);
         Assert.Equal(HttpStatusCode.BadRequest, (await cliente.PostAsJsonAsync(ruta, new NuevaGeneracionEntrada("incorrecto"))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await cliente.PostAsJsonAsync(ruta.Replace("agencia=306", "agencia=474"), new NuevaGeneracionEntrada("doc-1"))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await cliente.PostAsJsonAsync("/api/intentos/ref/nueva-generacion?agencia=306&plantilla=ajena", new NuevaGeneracionEntrada("doc-1"))).StatusCode);
@@ -175,7 +175,7 @@ public class ApiFirmaTests
         await Csrf(cliente);
         Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync(ruta, new NuevaGeneracionEntrada("doc-1"))).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos", entrada with { OperacionId = Guid.NewGuid() })).StatusCode);
-        Assert.Equal(2, aplicacion.Creaciones);
+        Assert.Equal(3, aplicacion.Creaciones);
     }
     [Fact]
     public async Task DocumentoPendienteExponeReintentoSeguroAntesDeConvocar()

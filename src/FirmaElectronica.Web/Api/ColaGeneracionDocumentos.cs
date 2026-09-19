@@ -42,7 +42,21 @@ public sealed class ColaGeneracionDocumentos(IServiceScopeFactory ambitos, ILogg
             {
                 using var ambito = ambitos.CreateScope();
                 var generacion = ambito.ServiceProvider.GetRequiredService<GeneracionDocumentos>();
-                var documento = await generacion.CrearAsync(trabajo.Usuario, trabajo.Documento, trabajo.Token, stoppingToken);
+                using var plazo = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                plazo.CancelAfter(TimeSpan.FromSeconds(180));
+                DocumentoGenerado documento;
+                for (var intento = 1; ; intento++)
+                {
+                    try
+                    {
+                        documento = await generacion.CrearAsync(trabajo.Usuario, trabajo.Documento, trabajo.Token, plazo.Token);
+                        break;
+                    }
+                    catch (CreacionDocumentoException error) when (intento < 3 && (error.ResultadoIncierto || error.EstadoHttp == System.Net.HttpStatusCode.TooManyRequests) && !plazo.IsCancellationRequested)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(5), plazo.Token);
+                    }
+                }
                 Actualizar(trabajo, new(trabajo.Id, "Completado", documento));
             }
             catch (CreacionDocumentoException error)
@@ -52,7 +66,7 @@ public sealed class ColaGeneracionDocumentos(IServiceScopeFactory ambitos, ILogg
             catch (Exception error)
             {
                 logger.LogWarning("Trabajo de generación interrumpido. Tipo {Tipo}", error.GetType().Name);
-                Actualizar(trabajo, new(trabajo.Id, "RequiereRevision", Mensaje: "Consulte el intento antes de generar nuevamente.", ResultadoIncierto: true));
+                Actualizar(trabajo, new(trabajo.Id, "RequiereRevision", Mensaje: "No se confirmó la generación dentro del tiempo disponible. Puedes volver a intentar.", ResultadoIncierto: true));
             }
         }
     }

@@ -14,7 +14,7 @@ async function abrirEnlaces(estado) {
     const elements = new Map(), ventanas = [], copias = [];
     const botonEnlace = { dataset: { enlaceFirma: 'firmante-123' } };
     const $ = selector => {
-        if (!elements.has(selector)) elements.set(selector, { open: true, querySelectorAll: query => query === '[data-enlace-firma]' ? [botonEnlace] : [] });
+        if (!elements.has(selector)) elements.set(selector, { open: true, insertAdjacentHTML: function (_, html) { this.innerHTML += html; }, querySelectorAll: query => query === '[data-enlace-firma]' ? [botonEnlace] : [] });
         return elements.get(selector);
     };
     const requests = [];

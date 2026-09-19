@@ -17,10 +17,10 @@ Actualizado el 8 de septiembre de 2026. Proyecto: FirmaElectronicaV2. Último co
 - Consulta de referencias: persona moral, persona física y seminuevos, en ese orden. Se rechazan duplicados.
 - Selección de plantilla y preparación de variables, alias, accesorios, importes, fechas, seguro y conectividad.
 - Preparación de firmantes por plantilla/agencia y validación de contacto.
-- Creación Legalario con límite de 120 segundos y sin reintento automático.
+- Creación en cola: hasta tres intentos, cinco segundos entre fallos temporales/inciertos y 180 segundos de plazo total.
 - Trabajos de generación en segundo plano y consulta de estado por usuario.
-- Registro de intentos en archivos, exclusión de envíos simultáneos, historial, búsqueda de candidatos y conciliación explícita.
-- Nueva generación explícita para documentos confirmados o intentos rechazados; los resultados inciertos no se reinician sin conciliar.
+- Registro de intentos en archivos, exclusión de envíos simultáneos e historial; asociación manual retirada de la interfaz.
+- Nuevas solicitudes e intentos inciertos pueden reintentarse sin conciliar; una misma operación confirmada reutiliza su resultado.
 - Consulta y búsqueda de documentos, paginación y orden global por fecha, PDF, conteo de firmas, convocatoria, reenvío y eliminación.
 - Cliente Quiter, incluido token y actualización de contacto sin arreglos vacíos.
 - Rutas autenticadas descritas en `API_BACKEND.md`.

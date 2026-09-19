@@ -28,10 +28,16 @@ public static class RutasFirma
         contexto.User.FindFirstValue("agencias") ?? "");
     private static string Token(HttpContext contexto) => contexto.Session.GetString("LegalarioToken") ?? throw new UnauthorizedAccessException("La sesión expiró. Inicie sesión nuevamente.");
     private static IReadOnlyCollection<string> Plantillas(string agencia) => PlantillasPorAgencia.Obtener(agencia).Values.Distinct().ToArray();
-    private static async Task<JsonElement> AutorizarDocumento(HttpContext contexto, ILegalarioClient legalario, string agencia, string id, CancellationToken ct)
+    private static async Task<JsonElement> AutorizarDocumento(HttpContext contexto, ILegalarioClient legalario, string agencia, string id, CancellationToken ct, bool esperar = false)
     {
         Usuario(contexto).ValidarAgencia(agencia);
-        var documento = await legalario.ConsultarDocumentoAsync(id, Token(contexto), ct);
+        JsonElement documento;
+        for (var intento = 1; ; intento++)
+        {
+            try { documento = await legalario.ConsultarDocumentoAsync(id, Token(contexto), ct); break; }
+            catch (OperacionLegalarioException error) when (esperar && intento < 3 && error.Reintentable)
+            { await Task.Delay(TimeSpan.FromSeconds(3), ct); }
+        }
         var plantilla = documento.TryGetProperty("organization_document_id", out var p) ? p.ToString() :
             documento.TryGetProperty("template_id", out p) ? p.ToString() : "";
         if (!Plantillas(agencia.Trim().ToUpperInvariant()).Contains(plantilla))
@@ -152,7 +158,7 @@ public static class RutasFirma
         });
         api.MapPost("/documentos/{id}/convocar", async (string id, ConvocarEntrada entrada, HttpContext c, ILegalarioClient legalario, IReferenciaDataProvider referencias, IPlantillaResolver resolver, PreparadorFirmantes preparadorFirmantes, ServicioConvocatoria convocatoria, CancellationToken ct) =>
         {
-            var documento = await AutorizarDocumento(c, legalario, entrada.Agencia, id, ct);
+            var documento = await AutorizarDocumento(c, legalario, entrada.Agencia, id, ct, esperar: true);
             var datos = await referencias.ObtenerDatosReferenciaAsync(entrada.Referencia, ct);
             if (!PreparadorVariables.Texto(datos, "dealer").Trim().Equals(entrada.Agencia.Trim(), StringComparison.OrdinalIgnoreCase)) throw new UnauthorizedAccessException();
             // Evita actualizar en Quiter el contacto de una referencia distinta al documento mostrado.

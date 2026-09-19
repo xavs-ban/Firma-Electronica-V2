@@ -34,3 +34,14 @@ test('Error temporal vuelve a consultar el mismo ID y después muestra la liga',
     assert.ok((await esperarPreparacion(() => consultarVistaPdf(api, doc), { reintentos: 2 })).url);
     assert.equal(consultas, 2);
 });
+test('PDF todavía no disponible permite esperar otra consulta sin generar documentos', async () => {
+    const rutas = [];
+    const context = vm.createContext({ URL, DOMException,
+        document: { querySelector: () => null },
+        fetch: async ruta => { rutas.push(ruta); return { status: 202 }; },
+        setTimeout: fn => { queueMicrotask(fn); return 1; }, clearTimeout() {} });
+    vm.runInContext(source.replaceAll('export ', '') + '\nthis.api = new ApiFirma();', context);
+    await assert.rejects(context.api.pdf(doc), error => error.estado === 202 && error.reintentable && !error.incierto);
+    assert.equal(rutas.length, 1);
+    assert.match(rutas[0], /documento-existente\/pdf/);
+});

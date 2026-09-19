@@ -37,7 +37,7 @@ export class ApiFirma {
     async pdf(documento, { signal } = {}) {
         const respuesta = await fetch(rutaAplicacion(`/api/documentos/${encodeURIComponent(documento.id)}/pdf?agencia=${encodeURIComponent(documento.agencia)}`), { credentials: 'same-origin', cache: 'no-store', signal });
         if (respuesta.status === 401) window.dispatchEvent(new Event('sesion-expirada'));
-        if (respuesta.status === 202) throw new ErrorApi('El documento está registrado, pero esta consulta no obtuvo su PDF. Vuelve a consultar este mismo documento; no generes otro.', 202);
+        if (respuesta.status === 202) throw new ErrorApi('El documento está registrado, pero esta consulta no obtuvo su PDF. Vuelve a consultar este mismo documento; no generes otro.', 202, false, true);
         if (!respuesta.ok) {
             const error = await respuesta.json().catch(() => ({}));
             throw new ErrorApi(error.mensaje || 'No se pudo abrir el PDF.', respuesta.status, !!error.resultadoIncierto, !!error.reintentable);

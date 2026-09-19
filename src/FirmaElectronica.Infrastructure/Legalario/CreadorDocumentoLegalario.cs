@@ -58,7 +58,7 @@ public sealed class CreadorDocumentoLegalario : ICreadorDocumentoLegalario
         var iniciadoEn = DateTimeOffset.UtcNow;
         try
         {
-            // Un solo envío. Un timeout no demuestra que Legalario haya descartado la creación.
+            // Cada llamada realiza un envío; la cola coordina los reintentos y su plazo total.
             using var respuesta = await cliente.SendAsync(solicitud, limite.Token);
             if (!respuesta.IsSuccessStatusCode)
             {
