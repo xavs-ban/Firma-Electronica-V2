@@ -191,7 +191,7 @@ public class ApiFirmaTests
         Assert.Equal(0, aplicacion.Creaciones);
     }
     [Fact]
-    public async Task ConsultaYConvocatoriaSolicitanPermisosDeFirmantesSinExponerCredenciales()
+    public async Task ConsultaYConvocatoriaUsanSesionAunqueElTokenAdicionalFalleCon500()
     {
         await using var aplicacion = new Aplicacion();
         using var cliente = aplicacion.CreateClient();
@@ -199,8 +199,7 @@ public class ApiFirmaTests
         Assert.Equal(new[] { "customers" }, aplicacion.Scopes);
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/api/documentos/doc-1/firmas?agencia=306")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/api/documentos/doc-1/firmas?agencia=306")).StatusCode);
-        Assert.Equal(2, aplicacion.Autorizaciones);
-        Assert.Contains("signers", aplicacion.Scopes[1]);
+        Assert.Equal(1, aplicacion.Autorizaciones);
         Firmante[] firmantes = [
             new("Representante", "rep@example.com", "5512345678", TipoFirmante.RepresentanteLegal),
             new("Gerente", "gerente@example.com", "5512345678", TipoFirmante.GerenteDeVentas),
@@ -208,8 +207,8 @@ public class ApiFirmaTests
             new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)
         ];
         Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/documentos/doc-1/convocar", new ConvocarEntrada("ref", "306", firmantes))).StatusCode);
-        Assert.Equal(3, aplicacion.Autorizaciones);
-        Assert.Equal(aplicacion.Scopes[1], aplicacion.Scopes[2]);
+        Assert.Equal(1, aplicacion.Autorizaciones);
+        Assert.Equal(new[] { "customers" }, aplicacion.Scopes);
         var sesion = await cliente.GetStringAsync("/api/sesion");
         Assert.DoesNotContain("secreto-falso", sesion);
         Assert.DoesNotContain("cliente-falso", sesion);
@@ -260,6 +259,7 @@ public class ApiFirmaTests
                 var cuerpo = solicitud.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
                 var scope = Uri.UnescapeDataString(cuerpo.Split('&').Single(p => p.StartsWith("scope="))[6..]);
                 Scopes.Add(scope);
+                if (scope != "customers") return new(HttpStatusCode.InternalServerError) { Content = JsonContent.Create(new { message = "Token adicional rechazado" }) };
                 return Json(new { data = new { access_token = "token-interno" } });
             }
             Assert.Equal("token-interno", solicitud.Headers.Authorization?.Parameter);

@@ -375,7 +375,7 @@ function iniciar() {
             $('#total-documentos').textContent = `${total} ${total === 1 ? 'documento' : 'documentos'}`;
             $('#documentos-estado').hidden = documentos.length > 0;
             $('#documentos-estado').innerHTML = `<span class="vacio-icono">${icono('carpeta')}</span><h3>No hay documentos para esta consulta</h3><p>Prueba con otro nombre, VIN o tipo de expediente.</p>`;
-            $('#documentos-tabla').innerHTML = documentos.map((d, i) => `<tr><td><div class="doc-nombre"><span class="icono-suave">${icono('documento')}</span><div><strong>${esc(d.nombre.replace(/^Documentaci[oó]n_/, '').replaceAll('_', ' · '))}</strong><small>${esc(agenciaNombre(d.agencia))}</small></div></div></td><td>${esc(fechaCorta(d.creadoEn))}</td><td><button class="enlace" data-accion="firmas-doc" data-id="${esc(d.id)}" id="conteo-${i}" aria-label="Consultar firmas de ${esc(d.nombre)}">Consultar</button></td><td><div class="acciones-tabla"><button class="boton-icono" data-accion="pdf-doc" data-id="${esc(d.id)}" title="Ver PDF" aria-label="Ver PDF de ${esc(d.nombre)}">${icono('ojo')}</button><button class="boton-icono" data-accion="firmas-doc" data-id="${esc(d.id)}" title="Convocar a firma" aria-label="Convocar a firma de ${esc(d.nombre)}">${icono('enviar')}</button><button class="boton-icono" data-accion="enlaces-doc" data-id="${esc(d.id)}" title="Obtener enlace de firma" aria-label="Obtener enlace de firma de ${esc(d.nombre)}">${icono('enlace')}</button><button class="boton-icono borrar" data-accion="borrar-doc" data-id="${esc(d.id)}" title="Eliminar documento" aria-label="Eliminar ${esc(d.nombre)}">${icono('borrar')}</button></div></td></tr>`).join('');
+            $('#documentos-tabla').innerHTML = documentos.map((d, i) => `<tr><td><div class="doc-nombre"><span class="icono-suave">${icono('documento')}</span><div><strong>${esc(d.nombre.replace(/^Documentaci[oó]n_/, '').replaceAll('_', ' · '))}</strong><small>${esc(agenciaNombre(d.agencia))}</small></div></div></td><td>${esc(fechaCorta(d.creadoEn))}</td><td><button class="enlace" data-accion="firmas-doc" data-id="${esc(d.id)}" id="conteo-${i}" aria-label="Consultar firmas de ${esc(d.nombre)}">Consultar</button></td><td><div class="acciones-tabla"><button class="boton-icono" data-accion="pdf-doc" data-id="${esc(d.id)}" title="Ver PDF" aria-label="Ver PDF de ${esc(d.nombre)}">${icono('ojo')}</button><button class="boton-icono" data-accion="firmas-doc" data-id="${esc(d.id)}" title="Convocar a firma" aria-label="Convocar a firma de ${esc(d.nombre)}">${icono('enviar')}</button><button class="boton-icono borrar" data-accion="borrar-doc" data-id="${esc(d.id)}" title="Eliminar documento" aria-label="Eliminar ${esc(d.nombre)}">${icono('borrar')}</button></div></td></tr>`).join('');
             $('#detalle-pagina').textContent = total ? `${(pagina - 1) * 15 + 1}–${Math.min(pagina * 15, total)} de ${total}` : 'Sin resultados';
             $('#pagina-actual').textContent = pagina; $('#pagina-anterior').disabled = pagina <= 1; $('#pagina-siguiente').disabled = pagina * 15 >= total;
             // Tres consultas simultáneas como máximo, evitando cargar todas las firmas a la vez.
@@ -426,8 +426,8 @@ function iniciar() {
         } catch (error) { if (actual === versionPdf && modal.open) $('#pdf-estado').textContent = error.message || 'No se pudo abrir el PDF.'; }
     }
     $('#modal-pdf').addEventListener('close', () => { versionPdf++; $('#pdf-marco').removeAttribute('src'); if (pdfUrl) URL.revokeObjectURL(pdfUrl); pdfUrl = null; });
-    async function abrirFirmas(documento, soloEnlaces = false) {
-        $('#titulo-firmas').textContent = soloEnlaces ? 'Enlaces de firma' : 'Convocar a firma';
+    async function abrirFirmas(documento) {
+        $('#titulo-firmas').textContent = 'Convocar a firma';
         const actual = ++versionFirmas; documentoFirmas = documento;
         $('#nombre-firmas').textContent = documento.nombre; $('#firmas-mensaje').textContent = '';
         $('#firmas-contenido').innerHTML = '<span class="spinner"></span>Consultando firmantes…';
@@ -439,7 +439,8 @@ function iniciar() {
             });
             if (actual !== versionFirmas || !$('#modal-firmas').open) return;
             if (estado.convocados > 0) {
-                $('#firmas-contenido').innerHTML = `<span class="badge ${estado.firmados === 0 ? 'sin-firmas' : estado.firmados === estado.convocados ? 'ok' : 'proceso'}">${estado.firmados} de ${estado.convocados} personas han firmado</span>${estado.firmantes.map(f => `<div class="firmante-estado"><div><strong>${esc(f.fullname || f.name || 'Firmante')}</strong><p>${esc(f.type || '')} · ${esc(f.email || '')}</p></div><span class="badge ${f.status === 'confirmed' ? 'ok' : 'aviso'}">${f.status === 'confirmed' ? 'Firmado' : 'Pendiente'}</span>${f.status !== 'confirmed' && !soloEnlaces ? `<button class="boton secundario" data-reenviar="${esc(f.id)}">Reenviar invitación</button>` : ''}<button class="boton secundario" data-enlace-firma="${esc(f.id)}">Obtener enlace</button></div>`).join('')}`;
+                $('#titulo-firmas').textContent = 'Reenvío de invitaciones y enlace';
+                $('#firmas-contenido').innerHTML = `<span class="badge ${estado.firmados === 0 ? 'sin-firmas' : estado.firmados === estado.convocados ? 'ok' : 'proceso'}">${estado.firmados} de ${estado.convocados} personas han firmado</span>${estado.firmantes.map(f => `<div class="firmante-estado"><div><strong>${esc(f.fullname || f.name || 'Firmante')}</strong><p>${esc(f.type || '')} · ${esc(f.email || '')}</p></div><span class="badge ${f.status === 'confirmed' ? 'ok' : 'aviso'}">${f.status === 'confirmed' ? 'Firmado' : 'Pendiente'}</span>${f.status !== 'confirmed' ? `<button class="boton secundario" data-reenviar="${esc(f.id)}">Reenviar invitación</button>` : ''}<button class="boton secundario" data-enlace-firma="${esc(f.id)}">Obtener enlace</button></div>`).join('')}`;
                 $('#firmas-contenido').querySelectorAll('[data-enlace-firma]').forEach(b => b.onclick = async () => {
                     try {
                         const url = enlaceFirma(b.dataset.enlaceFirma);
@@ -458,8 +459,6 @@ function iniciar() {
                     if (!await pedirConfirmacion('Reenviar invitación', 'Se enviará una nueva invitación a este firmante.', 'Reenviar')) return;
                     await ocupado(b, 'Enviando…', async () => { try { await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/firmantes/${encodeURIComponent(b.dataset.reenviar)}/reenviar?agencia=${encodeURIComponent(documento.agencia)}`, { metodo: 'POST' }); $('#firmas-mensaje').textContent = api.ejemplo ? 'Reenvío simulado correctamente.' : 'Invitación reenviada.'; } catch (error) { $('#firmas-mensaje').textContent = error.message; } });
                 });
-            } else if (soloEnlaces) {
-                $('#firmas-contenido').textContent = 'Este documento todavía no tiene firmantes registrados. Los enlaces estarán disponibles después de convocar a firma.';
             } else {
                 $('#firmas-contenido').innerHTML = '<h3>Revisa los firmantes</h3><div id="form-firmantes-area"><span class="spinner"></span>Recuperando los contactos del expediente…</div>';
                 const preparada = await esperarPreparacion(() => api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/preparar-firmantes?agencia=${encodeURIComponent(documento.agencia)}`), {
@@ -571,7 +570,6 @@ function iniciar() {
             const actividad = actividades.find(a => a.id === id), documento = documentos.find(d => d.id === id);
             if (accion === 'pdf-doc' && documento) await abrirPdf(documento);
             if (accion === 'firmas-doc' && documento) await abrirFirmas(documento);
-            if (accion === 'enlaces-doc' && documento) await abrirFirmas(documento, true);
             if (accion === 'pdf-actividad' && actividad?.documento) await abrirPdf(documentoActividad(actividad));
             if (accion === 'firmas-actividad' && actividad?.documento) await abrirFirmas(documentoActividad(actividad));
             if (accion === 'recuperar' && actividad) await recuperar(actividad);
