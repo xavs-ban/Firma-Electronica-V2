@@ -1,11 +1,20 @@
 {
   "AllowedHosts": "10.0.128.73;localhost",
-  "ConnectionStrings": { "Firma": "REEMPLAZAR" },
+  "ConnectionStrings": {
+    "Firma": "REEMPLAZAR"
+  },
   "Quiter": {
     "BaseUrl": "https://qis.quiter.com/qis",
     "ClientId": "REEMPLAZAR",
     "ClientSecret": "REEMPLAZAR",
     "Code": "REEMPLAZAR"
   },
-  "Legalario": { "BaseUrl": "https://api.legalario.com" }
+  "Legalario": {
+    "BaseUrl": "https://api.legalario.com"
+  },
+  "AccesoTemporal": {
+    "Activo": false,
+    "Usuario": "",
+    "Contrasena": ""
+  }
 }

@@ -2,6 +2,7 @@ import { ApiFirma, ErrorApi, esperarPreparacion, enlaceFirma, consultarVistaPdf 
 const raiz = document.querySelector('#firma-app');
 if (raiz) iniciar();
 function iniciar() {
+    const accesoTemporal = raiz.dataset.accesoTemporal === 'true';
     const $ = selector => document.querySelector(selector);
     const esc = valor => String(valor ?? '').replace(/[&<>"']/g, caracter => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[caracter]));
     const icono = nombre => `<svg aria-hidden="true"><use href="#i-${nombre}" /></svg>`;
@@ -135,6 +136,14 @@ function iniciar() {
         if (!lista.length) notificar('Tu cuenta no tiene agencias asignadas. Solicita que revisen tu acceso.', 'error');
         consultarTrabajos();
     }
+    if (accesoTemporal) {
+        const form = $('#form-acceso');
+        form.querySelectorAll('label').forEach(label => label.hidden = true);
+        form.querySelectorAll('input').forEach(input => { input.required = false; input.disabled = true; });
+        form.querySelector('[type=submit]').textContent = 'Entrar a Firma Digital';
+        $('#titulo-acceso').textContent = 'Acceso temporal';
+        $('#titulo-acceso').nextElementSibling.textContent = 'Ingresa para gestionar los documentos con la cuenta compartida.';
+    }
     $('#form-acceso').addEventListener('submit', async evento => {
         evento.preventDefault(); const form = evento.currentTarget;
         $('#error-acceso').hidden = true;
@@ -143,7 +152,7 @@ function iniciar() {
             $('#error-acceso').textContent = 'Estamos preparando tu espacio…'; $('#error-acceso').hidden = false;
             try {
                 api = new ApiFirma(); await api.csrf();
-                await api.solicitar('/api/sesion', { metodo: 'POST', datos: { usuario: form.usuario.value.trim(), contrasena: form.contrasena.value } });
+                await api.solicitar('/api/sesion', { metodo: 'POST', datos: accesoTemporal ? { usuario: "", contrasena: "" } : { usuario: form.usuario.value.trim(), contrasena: form.contrasena.value } });
                 await api.csrf(); await entrar();
                 Swal.close(); prepararDesdeEntregas();
             } catch (error) { $('#error-acceso').textContent = error.message; $('#error-acceso').hidden = false; }
@@ -594,10 +603,12 @@ function iniciar() {
         } catch (error) { notificar(error.message, 'error'); }
     });
     const apertura = new URLSearchParams(location.hash.slice(1));
+    // Integración con Entregas pausada durante el acceso temporal; conservar para reactivarla.
+    const entregasPausadas = accesoTemporal;
     let origenEntregas = null;
     try {
         const origen = new URL(apertura.get('origen'));
-        if (window.parent !== window && apertura.get('entregas') === '1' &&
+        if (!entregasPausadas && window.parent !== window && apertura.get('entregas') === '1' &&
             origen.origin === new URL(document.referrer).origin && origen.hostname === location.hostname && origen.protocol === location.protocol)
             origenEntregas = origen.origin;
     } catch {}

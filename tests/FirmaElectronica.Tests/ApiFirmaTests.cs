@@ -213,6 +213,36 @@ public class ApiFirmaTests
         Assert.DoesNotContain("secreto-falso", sesion);
         Assert.DoesNotContain("cliente-falso", sesion);
     }
+    [Fact]
+    public async Task ModoTemporalUsaSoloCredencialesDelServidorYPerfilCompartido()
+    {
+        await using var aplicacion = new Aplicacion { AccesoTemporal = true };
+        using var cliente = aplicacion.CreateClient();
+        await Csrf(cliente);
+        var respuesta = await cliente.PostAsJsonAsync("/api/sesion", new Acceso("usuario-entregas", "clave-entregas"));
+        Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
+        Assert.Single(aplicacion.Logins);
+        Assert.Contains("email=prueba", aplicacion.Logins[0]);
+        Assert.Contains("password=clave-compartida-prueba", aplicacion.Logins[0]);
+        Assert.DoesNotContain("entregas", aplicacion.Logins[0]);
+        var sesion = await cliente.GetStringAsync("/api/sesion");
+        Assert.Contains("prueba", sesion);
+        Assert.DoesNotContain("clave-compartida", sesion);
+        var pagina = await cliente.GetStringAsync("/");
+        Assert.Contains("data-acceso-temporal=\"true\"", pagina);
+        Assert.DoesNotContain("clave-compartida", pagina);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/api/agencias")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync("/api/referencias/sin-permiso")).StatusCode);
+    }
+    [Fact]
+    public async Task ModoTemporalSinConfiguracionNoCaeEnCredencialesDelNavegador()
+    {
+        await using var aplicacion = new Aplicacion { AccesoTemporal = true, ContrasenaTemporal = "" };
+        using var cliente = aplicacion.CreateClient();
+        await Csrf(cliente);
+        Assert.Equal(HttpStatusCode.Conflict, (await cliente.PostAsJsonAsync("/api/sesion", new Acceso("prueba", "clave"))).StatusCode);
+        Assert.Empty(aplicacion.Logins);
+    }
     private static async Task Entrar(HttpClient cliente)
     {
         await Csrf(cliente);
@@ -230,6 +260,10 @@ public class ApiFirmaTests
         private readonly string carpeta = Path.Combine(Path.GetTempPath(), "firma-api-" + Guid.NewGuid().ToString("N"));
         public int Creaciones, Autorizaciones;
         public bool DocumentoPendiente;
+        public bool AccesoTemporal;
+        public string UsuarioTemporal = "prueba";
+        public string ContrasenaTemporal = "clave-compartida-prueba";
+        public List<string> Logins { get; } = [];
         public List<string> Scopes { get; } = [];
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -237,7 +271,10 @@ public class ApiFirmaTests
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Legalario:BaseUrl"] = "https://api.legalario.com",
-                ["Hosting:PathBase"] = rutaBase
+                ["Hosting:PathBase"] = rutaBase,
+                ["AccesoTemporal:Activo"] = AccesoTemporal.ToString(),
+                ["AccesoTemporal:Usuario"] = UsuarioTemporal,
+                ["AccesoTemporal:Contrasena"] = ContrasenaTemporal
             }));
             builder.ConfigureServices(servicios =>
             {
@@ -252,7 +289,7 @@ public class ApiFirmaTests
         {
             var ruta = solicitud.RequestUri!.AbsolutePath;
             var plantilla = CatalogoPlantillas.Contado["306"];
-            if (ruta == "/auth/login") return Json(new { success = true, data = new { client_id = "cliente-falso", client_secret = "secreto-falso" } });
+            if (ruta == "/auth/login") { Logins.Add(solicitud.Content!.ReadAsStringAsync().GetAwaiter().GetResult()); return Json(new { success = true, data = new { client_id = "cliente-falso", client_secret = "secreto-falso" } }); }
             if (ruta == "/auth/token")
             {
                 Interlocked.Increment(ref Autorizaciones);

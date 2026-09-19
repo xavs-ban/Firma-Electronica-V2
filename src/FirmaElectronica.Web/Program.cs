@@ -1,4 +1,6 @@
 using System.Threading.RateLimiting;
+using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
 using FirmaElectronica.Application.Abstractions;
@@ -15,6 +17,7 @@ using Microsoft.AspNetCore.RateLimiting;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true).AddEnvironmentVariables();
 builder.Services.AddRazorPages();
+builder.Services.Configure<AccesoTemporalOptions>(builder.Configuration.GetSection("AccesoTemporal"));
 // Excepción explícita para la dirección HTTP privada solicitada en IIS.
 var httpInterno = builder.Configuration.GetValue<bool>("Hosting:HttpInterno");
 var cookiesSeguras = builder.Environment.IsDevelopment() || httpInterno
@@ -41,6 +44,18 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     opciones.Cookie.HttpOnly = true;
     opciones.Cookie.SameSite = SameSiteMode.Strict;
     opciones.Cookie.SecurePolicy = cookiesSeguras;
+    opciones.Events.OnValidatePrincipal = async contexto =>
+    {
+        var modo = contexto.HttpContext.RequestServices.GetRequiredService<IOptions<AccesoTemporalOptions>>().Value;
+        var marca = contexto.Principal?.FindFirst("acceso_temporal")?.Value;
+        if ((modo.Activo && (marca != modo.Usuario || !string.Equals(contexto.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, modo.Usuario, StringComparison.OrdinalIgnoreCase))) ||
+            (!modo.Activo && marca is not null))
+        {
+            contexto.RejectPrincipal();
+            contexto.HttpContext.Session.Clear();
+            await contexto.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        }
+    };
     opciones.Events.OnRedirectToLogin = contexto => { contexto.Response.StatusCode = 401; return Task.CompletedTask; };
     opciones.Events.OnRedirectToAccessDenied = contexto => { contexto.Response.StatusCode = 403; return Task.CompletedTask; };
 });

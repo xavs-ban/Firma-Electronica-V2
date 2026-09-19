@@ -4,11 +4,11 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../../src/FirmaElectronica.Web/wwwroot/js/site.js', import.meta.url), 'utf8');
 const bridge = source.slice(source.indexOf('    const apertura ='), source.lastIndexOf('\n}'));
-async function setup({ referrer = 'http://10.0.128.73:3000/', fail = false } = {}) {
+async function setup({ referrer = 'http://10.0.128.73:3000/', fail = false, temporal = false } = {}) {
     const messages = [], requests = [], handlers = {}, calls = [];
     const parent = { postMessage: (...args) => messages.push(args) };
     const context = vm.createContext({
-        URL, URLSearchParams,
+        URL, URLSearchParams, accesoTemporal: temporal,
         location: { hash: '#entregas=1&origen=http%3A%2F%2F10.0.128.73%3A3000&canal=prueba', hostname: '10.0.128.73', protocol: 'http:', pathname: '/firma-digital/', search: '' },
         history: { replaceState: () => calls.push('limpiar-url') },
         document: { referrer },
@@ -56,5 +56,13 @@ test('Si falla autenticación conserva referencia para login manual y no consult
     await app.send();
     assert.equal(app.context.referenciaEntregasPendiente, '00123456');
     assert.ok(app.calls.includes('Acceso rechazado'));
+    assert.ok(!app.calls.includes('consultar'));
+});
+
+test('Acceso temporal ignora credenciales de Entregas y no anuncia el intercambio', async () => {
+    const app = await setup({ temporal: true });
+    await app.send();
+    assert.equal(app.requests.length, 0);
+    assert.equal(app.messages.length, 0);
     assert.ok(!app.calls.includes('consultar'));
 });

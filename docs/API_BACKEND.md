@@ -98,3 +98,25 @@ La convocatoria consulta el endpoint de firmantes durante un máximo de 45 segun
 La convocatoria omite `workflow`, igual que el ZIP anterior proporcionado por el equipo, que documenta su retiro por recomendación del proveedor. Conserva `document_id`, `use_whatsapp`, `send_invite` y los firmantes con `fullname`, `email`, `phone`, `type` y `role`.
 
 Dentro del modal «Reenvío de invitaciones y enlace», junto a Reenviar invitación, se permite obtener y copiar el enlace de cada firmante existente (`https://saas.legalario.com/portal/invitacion/{signerId}`). Esta acción sólo consulta; no crea firmantes ni reenvía invitaciones. La generación y el envío confirmado presentan un modal de resultado.
+
+## Acceso compartido temporal
+
+`AccesoTemporal:Activo=true` habilita el botón Entrar a Firma Digital. El servidor toma `Usuario` y `Contrasena` de esa sección privada, ignora las credenciales del navegador y obtiene el perfil SQL de la cuenta compartida. Todos actúan con la identidad y agencias de ese perfil. No se omiten los permisos por agencia, CSRF ni límites de acceso; las sesiones individuales anteriores deben volver a entrar. En este modo la atribución en Legalario y los intentos corresponde a la cuenta compartida.
+
+El intercambio de credenciales con App de Entregas (`http://10.0.128.73:3357/index.html`) queda pausado mediante una condición comentada en el puente. No se procesan mensajes `firma-acceso` ni se anuncia `firma-lista`. Al desactivar el modo se restaura el flujo individual sin reescribir el puente.
+
+Las credenciales se configuran en `appsettings.Local.json` para desarrollo o en el archivo privado de IIS. Ningún ejemplo del repositorio contiene credenciales reales. Para IIS, copia el JSON privado de la cuenta al servidor y ejecuta:
+
+```powershell
+.\deploy\configurar-acceso-temporal.ps1 -ArchivoCuenta 'C:\ruta-privada\firma-acceso-temporal.private.json'
+.\deploy\deploy-firma-digital.ps1
+```
+
+Para volver al acceso por empleado:
+
+```powershell
+.\deploy\configurar-acceso-temporal.ps1 -Desactivar
+.\deploy\deploy-firma-digital.ps1
+```
+
+El script modifica únicamente la sección AccesoTemporal del archivo privado existente. No despliega por sí solo. Al activar o desactivar, las sesiones del modo anterior se invalidan en la siguiente petición autenticada.
