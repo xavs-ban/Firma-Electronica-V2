@@ -42,7 +42,7 @@ public class TransporteLegalarioTests
     {
         using var transporte = new Transporte((r, _) => Task.FromResult(Respuesta(r.RequestUri!.Query == "" ? "{\"data\":{\"id\":\"d\"}}" : "<html>Error</html>")));
         using var http = new HttpClient(transporte);
-        Assert.Null(await Crear(http).DescargarPdfAsync("d", "token", default));
+        await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).DescargarPdfAsync("d", "token", default));
     }
     [Fact]
     public async Task DescargaAceptaBytesPdf()
@@ -197,6 +197,35 @@ public class TransporteLegalarioTests
         using var http = new HttpClient(transporte);
         var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).ConsultarFirmasAsync("d", "token", default));
         Assert.False(error.Reintentable);
+    }
+    [Theory]
+    [InlineData(401, false)]
+    [InlineData(403, false)]
+    [InlineData(404, true)]
+    [InlineData(429, true)]
+    [InlineData(500, true)]
+    public async Task VistaConservaErrorDeDescargaSinConvertirloEnAusenciaDePdf(int codigo, bool temporal)
+    {
+        using var transporte = new Transporte((r, _) => Task.FromResult(r.RequestUri!.AbsolutePath == "/v2/documents/d"
+            ? Respuesta("{\"data\":{\"id\":\"d\"}}") : Respuesta("{}", (HttpStatusCode)codigo)));
+        using var http = new HttpClient(transporte);
+        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).ObtenerUrlDocumentoAsync("d", "token", default));
+        Assert.Equal(codigo, error.EstadoHttp);
+        Assert.Equal(temporal, error.Reintentable);
+        Assert.Equal(2, transporte.Envios);
+    }
+    [Theory]
+    [InlineData(403, false)]
+    [InlineData(503, true)]
+    public async Task DescargaBinariaConservaRechazoDelProveedor(int codigo, bool temporal)
+    {
+        using var transporte = new Transporte((r, _) => Task.FromResult(r.RequestUri!.AbsolutePath == "/v2/documents/d"
+            ? Respuesta("{\"data\":{\"id\":\"d\"}}") : Respuesta("{}", (HttpStatusCode)codigo)));
+        using var http = new HttpClient(transporte);
+        var error = await Assert.ThrowsAsync<OperacionLegalarioException>(() => Crear(http).DescargarPdfAsync("d", "token", default));
+        Assert.Equal(codigo, error.EstadoHttp);
+        Assert.Equal(temporal, error.Reintentable);
+        Assert.Equal(2, transporte.Envios);
     }
     private static ClienteLegalario Crear(HttpClient http) => new(http, new() { BaseUrl = "https://api.legalario.com" });
     private static HttpResponseMessage Respuesta(string cuerpo, HttpStatusCode estado = HttpStatusCode.OK) => new(estado) { Content = new StringContent(cuerpo) };

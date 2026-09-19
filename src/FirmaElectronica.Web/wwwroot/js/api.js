@@ -34,13 +34,13 @@ export class ApiFirma {
         }
         return contenido;
     }
-    async pdf(documento) {
-        const respuesta = await fetch(rutaAplicacion(`/api/documentos/${encodeURIComponent(documento.id)}/pdf?agencia=${encodeURIComponent(documento.agencia)}`), { credentials: 'same-origin', cache: 'no-store' });
+    async pdf(documento, { signal } = {}) {
+        const respuesta = await fetch(rutaAplicacion(`/api/documentos/${encodeURIComponent(documento.id)}/pdf?agencia=${encodeURIComponent(documento.agencia)}`), { credentials: 'same-origin', cache: 'no-store', signal });
         if (respuesta.status === 401) window.dispatchEvent(new Event('sesion-expirada'));
-        if (respuesta.status === 202) throw new ErrorApi('Legalario no entregó una liga ni un PDF disponible. Intenta nuevamente; esto no confirma que el documento siga en preparación.', 202);
+        if (respuesta.status === 202) throw new ErrorApi('El documento está registrado, pero esta consulta no obtuvo su PDF. Vuelve a consultar este mismo documento; no generes otro.', 202);
         if (!respuesta.ok) {
             const error = await respuesta.json().catch(() => ({}));
-            throw new ErrorApi(error.mensaje || 'No se pudo abrir el PDF.', respuesta.status);
+            throw new ErrorApi(error.mensaje || 'No se pudo abrir el PDF.', respuesta.status, !!error.resultadoIncierto, !!error.reintentable);
         }
         if (!(respuesta.headers.get('content-type') || '').includes('application/pdf')) throw new ErrorApi('No recibimos un PDF válido. Consulta el documento de nuevo.');
         return respuesta.blob();
@@ -68,4 +68,16 @@ export async function esperarPreparacion(accion, { signal, vigente = () => true,
 export function enlaceFirma(firmanteId) {
     if (typeof firmanteId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(firmanteId)) throw new Error('No se recibió un identificador de firmante válido.');
     return `https://saas.legalario.com/portal/invitacion/${encodeURIComponent(firmanteId)}`;
+}
+
+export async function consultarVistaPdf(api, documento, signal) {
+    if (!api.ejemplo) {
+        const vista = await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/vista?agencia=${encodeURIComponent(documento.agencia)}`, { signal });
+        if (vista.url) {
+            const url = new URL(vista.url);
+            if (url.protocol !== 'https:' || url.username || url.password) throw new ErrorApi('La liga de descarga recibida no es válida.');
+            return { url: url.href };
+        }
+    }
+    return { pdf: await api.pdf(documento, { signal }) };
 }

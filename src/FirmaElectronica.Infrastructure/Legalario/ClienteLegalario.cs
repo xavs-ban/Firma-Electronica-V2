@@ -136,6 +136,7 @@ public sealed class ClienteLegalario(HttpClient http, LegalarioOptions opciones)
         var datos = await ConsultarDocumentoAsync(documentoId, token, ct);
         if (BuscarUrl(datos) is { } directa) return directa;
         var firmado = datos.TryGetProperty("signature_progress", out var progreso) && progreso.ValueKind != JsonValueKind.Null && progreso.ToString() != "";
+        OperacionLegalarioException? rechazo = null;
         foreach (var tipo in new[] { firmado ? "Documento con firmado" : "Documento sin firmas", "Documento sin firmas", "Documento con firmas", "Documento con firmado", "Documento original" }.Distinct())
         {
             try
@@ -143,18 +144,18 @@ public sealed class ClienteLegalario(HttpClient http, LegalarioOptions opciones)
                 var resultado = await JsonAsync(HttpMethod.Get, $"/v2/documents/download?document_id={Codificar(documentoId)}&document_type={Codificar(tipo)}&format=URL", token, ct);
                 if (BuscarUrl(resultado) is { } url) return url;
             }
-            catch (OperacionLegalarioException e) when (e.EstadoHttp is not (401 or 403)) { }
+            catch (OperacionLegalarioException e) when (!e.Reintentable && e.EstadoHttp is 400 or 422) { rechazo ??= e; }
         }
+        if (rechazo is not null) throw rechazo;
         return null;
     }
     public async Task<byte[]?> DescargarPdfAsync(string documentoId, string token, CancellationToken ct)
     {
         // Se consulta sólo el endpoint conocido. Nunca se descarga una URL arbitraria con el token.
-        JsonElement datos;
-        try { datos = await ConsultarDocumentoAsync(documentoId, token, ct); }
-        catch (OperacionLegalarioException e) when (e.EstadoHttp is 404 or 409 or 425 or 429 or 500 or 502 or 503 or 504) { return null; }
+        var datos = await ConsultarDocumentoAsync(documentoId, token, ct);
         var firmado = datos.TryGetProperty("signature_progress", out var progreso) && progreso.ValueKind != JsonValueKind.Null && progreso.ToString() != "";
         var tipos = new[] { firmado ? "Documento con firmado" : "Documento sin firmas", "Documento sin firmas", "Documento con firmas", "Documento con firmado", "Documento original" }.Distinct();
+        OperacionLegalarioException? rechazo = null;
         foreach (var tipo in tipos)
         {
             using var solicitud = Solicitud(HttpMethod.Get, $"/v2/documents/download?document_id={Codificar(documentoId)}&document_type={Codificar(tipo)}&format=PDF", token);
@@ -163,10 +164,19 @@ public sealed class ClienteLegalario(HttpClient http, LegalarioOptions opciones)
             using var respuesta = await EnviarAsync(solicitud, ct);
             if (respuesta.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
                 throw new OperacionLegalarioException("No hay acceso al documento.", (int)respuesta.StatusCode);
-            if (!respuesta.IsSuccessStatusCode) continue;
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                var codigo = (int)respuesta.StatusCode;
+                var error = new OperacionLegalarioException($"Legalario no pudo entregar el PDF (HTTP {codigo}).", codigo,
+                    reintentable: codigo is 404 or 408 or 409 or 425 or 429 or >= 500);
+                if (codigo is 400 or 422) { rechazo ??= error; continue; }
+                throw error;
+            }
             var bytes = await respuesta.Content.ReadAsByteArrayAsync(ct);
             if (bytes.Length >= 5 && bytes.AsSpan(0, 5).SequenceEqual("%PDF-"u8)) return bytes;
+            rechazo ??= new OperacionLegalarioException("Legalario respondió a la descarga sin entregar un PDF válido.");
         }
+        if (rechazo is not null) throw rechazo;
         return null;
     }
     public async Task<EstadoFirmas> ConsultarFirmasAsync(string documentoId, string token, CancellationToken ct)

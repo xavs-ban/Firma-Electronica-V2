@@ -1,4 +1,4 @@
-import { ApiFirma, ErrorApi, esperarPreparacion, enlaceFirma } from './api.js';
+import { ApiFirma, ErrorApi, esperarPreparacion, enlaceFirma, consultarVistaPdf } from './api.js';
 const raiz = document.querySelector('#firma-app');
 if (raiz) iniciar();
 function iniciar() {
@@ -403,29 +403,40 @@ function iniciar() {
             focusCancel: true, allowOutsideClick: false, confirmButtonColor: peligro ? '#c63849' : '#2448a5' });
         return resultado.isConfirmed === true;
     }
+    let controladorPdf;
     async function abrirPdf(documento) {
+        controladorPdf?.abort();
+        const controlador = controladorPdf = new AbortController();
+        const limite = setTimeout(() => controlador.abort(), 45000);
         const actual = ++versionPdf, sesion = versionSesion, modal = $('#modal-pdf');
         if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
         $('#titulo-pdf').textContent = documento.nombre; $('#pdf-marco').hidden = true; $('#pdf-marco').removeAttribute('src'); $('#descargar-pdf').hidden = true;
         $('#pdf-estado').hidden = false; $('#pdf-estado').innerHTML = '<span class="spinner"></span>Preparando la vista del documento…';
         if (!modal.open) modal.showModal();
         try {
-            if (!api.ejemplo) {
-                const vista = await api.solicitar(`/api/documentos/${encodeURIComponent(documento.id)}/vista?agencia=${encodeURIComponent(documento.agencia)}`).catch(error => { if (error.estado === 401 || error.estado === 403) throw error; return {}; });
-                if (actual !== versionPdf || sesion !== versionSesion || !modal.open) return;
-                if (vista.url && new URL(vista.url).protocol === 'https:') {
-                    $('#pdf-marco').src = vista.url; $('#pdf-marco').hidden = false;
-                    $('#pdf-estado').textContent = 'Si no aparece la vista previa, abre el documento con el botón inferior.';
-                    $('#descargar-pdf').href = vista.url; $('#descargar-pdf').target = '_blank'; $('#descargar-pdf').rel = 'noopener noreferrer'; $('#descargar-pdf').textContent = 'Abrir PDF'; $('#descargar-pdf').hidden = false;
-                    return;
-                }
+            const vista = await esperarPreparacion(() => consultarVistaPdf(api, documento, controlador.signal), {
+                signal: controlador.signal, reintentos: 2,
+                vigente: () => actual === versionPdf && sesion === versionSesion && modal.open,
+                onEspera: () => { if (actual === versionPdf) $('#pdf-estado').textContent = 'La consulta del PDF no está disponible temporalmente. Volviendo a consultar el mismo documento…'; }
+            });
+            if (actual !== versionPdf || sesion !== versionSesion || !modal.open) return;
+            if (vista.url) {
+                $('#pdf-marco').src = vista.url; $('#pdf-marco').hidden = false;
+                $('#pdf-estado').textContent = 'Si no aparece la vista previa, abre el documento con el botón inferior.';
+                $('#descargar-pdf').href = vista.url; $('#descargar-pdf').target = '_blank'; $('#descargar-pdf').rel = 'noopener noreferrer'; $('#descargar-pdf').textContent = 'Abrir PDF'; $('#descargar-pdf').hidden = false;
+                return;
             }
-            const pdf = await api.pdf(documento); if (actual !== versionPdf || sesion !== versionSesion || !modal.open) return;
+            const pdf = vista.pdf;
             pdfUrl = URL.createObjectURL(pdf); $('#pdf-marco').src = pdfUrl; $('#pdf-marco').hidden = false; $('#pdf-estado').hidden = false; $('#pdf-estado').textContent = 'Si tu navegador no muestra la vista previa, utiliza Descargar PDF para abrir el documento.';
             $('#descargar-pdf').textContent = 'Descargar PDF'; $('#descargar-pdf').removeAttribute('target'); $('#descargar-pdf').href = pdfUrl; $('#descargar-pdf').hidden = false;
-        } catch (error) { if (actual === versionPdf && modal.open) $('#pdf-estado').textContent = error.message || 'No se pudo abrir el PDF.'; }
+        } catch (error) {
+            if (actual === versionPdf && sesion === versionSesion && modal.open) {
+                $('#pdf-estado').textContent = `${error.name === 'AbortError' ? 'Se agotó el tiempo de consulta del PDF.' : error.message || 'No se pudo abrir el PDF.'} Documento: ${documento.id}. No necesitas generar otro documento para volver a consultar.`;
+                const boton = document.createElement('button'); boton.type = 'button'; boton.className = 'boton secundario'; boton.textContent = 'Volver a consultar PDF'; boton.onclick = () => abrirPdf(documento); $('#pdf-estado').append(boton);
+            }
+        } finally { clearTimeout(limite); }
     }
-    $('#modal-pdf').addEventListener('close', () => { versionPdf++; $('#pdf-marco').removeAttribute('src'); if (pdfUrl) URL.revokeObjectURL(pdfUrl); pdfUrl = null; });
+    $('#modal-pdf').addEventListener('close', () => { controladorPdf?.abort(); versionPdf++; $('#pdf-marco').removeAttribute('src'); if (pdfUrl) URL.revokeObjectURL(pdfUrl); pdfUrl = null; });
     async function abrirFirmas(documento) {
         $('#titulo-firmas').textContent = 'Convocar a firma';
         const actual = ++versionFirmas; documentoFirmas = documento;
