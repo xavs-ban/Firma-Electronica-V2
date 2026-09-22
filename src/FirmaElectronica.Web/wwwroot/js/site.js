@@ -22,7 +22,7 @@ function iniciar() {
     }
     const fechaHoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const fechaCampo = valor => /^\d{4}-\d{2}-\d{2}/.test(String(valor || '')) ? String(valor).slice(0, 10) : '';
-    const fechaCorta = valor => { const d = new Date(valor); return Number.isNaN(d.getTime()) ? 'Por confirmar' : d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); };
+    const fechaCorta = valor => { const d = new Date(valor); return !valor || Number.isNaN(d.getTime()) ? 'Por confirmar' : d.toLocaleString('es-MX', { timeZone: 'America/Mexico_City', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); };
     const dinero = valor => valor != null && Number.isFinite(Number(String(valor).replaceAll(',', ''))) ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(Number(String(valor).replaceAll(',', ''))) : 'Por confirmar';
     const tipoNombre = { Contado: 'Contado', Financiamiento: 'Financiamiento', PersonaMoral: 'Persona moral', SeminuevosContado: 'Seminuevos', Hyundai: 'Hyundai' };
     const roles = ['CLIENTE', 'APV', 'GERENTE DE VENTAS', 'REPRESENTANTE LEGAL'];
@@ -525,9 +525,10 @@ function iniciar() {
                         vigente: () => version === versionFirmas && $('#modal-firmas').open,
                         onEspera: () => { if (version === versionFirmas) $('#firmas-mensaje').textContent = 'Legalario todavía no aceptó el envío. Esperando para volver a intentarlo…'; }
                     });
+                    if (resultado.avisoContacto) console.warn('[Quiter]', resultado.avisoContacto);
                     await ventana({
                         title: api.ejemplo ? 'Convocatoria simulada' : resultado.reenviadas ? 'Invitaciones reenviadas correctamente' : resultado.nuevos === 0 ? 'Firmas completadas' : 'Invitaciones enviadas correctamente',
-                        text: [resultado.reenviadas ? `Se reenviaron ${resultado.reenviadas} invitaciones a los contactos registrados en Legalario.${resultado.nuevos ? ` También se convocó a ${resultado.nuevos} firmantes faltantes.` : ''}` : resultado.nuevos === 0 ? 'Todos los firmantes registrados ya firmaron.' : 'Los firmantes ya pueden abrir su invitación para firmar el documento.', resultado.avisoContacto].filter(Boolean).join(' '),
+                        text: resultado.reenviadas ? `Se reenviaron ${resultado.reenviadas} invitaciones a los contactos registrados en Legalario.${resultado.nuevos ? ` También se convocó a ${resultado.nuevos} firmantes faltantes.` : ''}` : resultado.nuevos === 0 ? 'Todos los firmantes registrados ya firmaron.' : 'Los firmantes ya pueden abrir su invitación para firmar el documento.',
                         icon: 'success', confirmButtonText: 'Aceptar', allowOutsideClick: false
                     });
                     paginaDocumentosCargada = false;

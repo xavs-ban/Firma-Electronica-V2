@@ -10,7 +10,7 @@ Antes de convocar a firma, la plataforma actual actualiza los datos de contacto 
 4. Busca `cta_cliente` en los datos de la referencia.
 5. Si existe cuenta de cliente, obtiene token de Quiter.
 6. Envia actualizacion a Quiter.
-7. Si Quiter falla, la convocatoria continúa y el resultado muestra el motivo controlado del fallo.
+7. Si Quiter falla, la convocatoria continúa y el motivo controlado del fallo se registra en la consola del navegador; no aparece en el modal de éxito.
 
 ## Payload actual
 

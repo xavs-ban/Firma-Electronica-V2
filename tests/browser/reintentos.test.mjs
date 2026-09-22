@@ -5,18 +5,18 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../../src/FirmaElectronica.Web/wwwroot/js/site.js', import.meta.url), 'utf8');
 
 test('Un envío incierto libera el botón y permite reenviar sin el aviso de convocatoria registrada', async () => {
-    const button = { disabled: false }, messages = [], requests = [], elements = new Map();
+    const button = { disabled: false }, messages = [], requests = [], avisos = [], elements = new Map();
     const form = { reportValidity: () => true, querySelector: () => button, querySelectorAll: () => [], append: () => {},
         elements: { 'nombre-0': { value: 'Ana' }, 'correo-0': { value: 'ana@example.com' }, 'telefono-0': { value: '5512345678' } } };
     const $ = selector => selector === '#form-enviar-firmas' ? form : elements.has(selector) ? elements.get(selector) : (elements.set(selector, { open: true }), elements.get(selector));
-    const context = vm.createContext({ $, esc: String, roles: {}, icono: () => '', versionFirmas: 1, paginaDocumentosCargada: true,
+    const context = vm.createContext({ console: { warn: (...args) => avisos.push(args) }, $, esc: String, roles: {}, icono: () => '', versionFirmas: 1, paginaDocumentosCargada: true,
         AbortController, setTimeout: () => 1, clearTimeout: () => {}, document: { createElement: () => ({}) },
         ocupado: async (b, _, accion) => { b.disabled = true; try { await accion(); } finally { b.disabled = false; } },
         esperarPreparacion: accion => accion(), ventana: async opciones => messages.push(opciones), abrirFirmas: async () => {},
         api: { solicitar: async (...args) => {
             requests.push(args);
             if (requests.length === 1) throw Object.assign(new Error('Respuesta interrumpida'), { incierto: true });
-            return { nuevos: 0, reenviadas: 1, recuperada: true };
+            return { nuevos: 0, reenviadas: 1, recuperada: true, avisoContacto: "Quiter rechazó la actualización (HTTP 400)." };
         } }
     });
     vm.runInContext(source.slice(source.indexOf('    function pintarFirmantes('), source.indexOf("    $('#modal-firmas').addEventListener('close'")), context);
@@ -28,6 +28,8 @@ test('Un envío incierto libera el botón y permite reenviar sin el aviso de con
     await form.onsubmit(evento);
     assert.equal(requests.length, 2);
     assert.equal(messages[0].title, 'Invitaciones reenviadas correctamente');
+    assert.doesNotMatch(messages[0].text, /Quiter|HTTP 400/);
+    assert.match(avisos[0][1], /HTTP 400/);
     assert.equal(button.disabled, false);
 });
 
