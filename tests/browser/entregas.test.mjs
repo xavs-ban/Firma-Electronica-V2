@@ -4,12 +4,12 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../../src/FirmaElectronica.Web/wwwroot/js/site.js', import.meta.url), 'utf8');
 const bridge = source.slice(source.indexOf('    const apertura ='), source.lastIndexOf('\n}'));
-async function setup({ referrer = 'http://10.0.128.73:3000/', fail = false, temporal = false } = {}) {
+async function setup({ referrer = 'http://10.0.128.73:3357/', fail = false, temporal = false } = {}) {
     const messages = [], requests = [], handlers = {}, calls = [];
     const parent = { postMessage: (...args) => messages.push(args) };
     const context = vm.createContext({
         URL, URLSearchParams, accesoTemporal: temporal,
-        location: { hash: '#entregas=1&origen=http%3A%2F%2F10.0.128.73%3A3000&canal=prueba', hostname: '10.0.128.73', protocol: 'http:', pathname: '/firma-digital/', search: '' },
+        location: { hash: '#entregas=1&origen=http%3A%2F%2F10.0.128.73%3A3357&canal=prueba', hostname: '10.0.128.73', protocol: 'http:', pathname: '/firma-digital/', search: '' },
         history: { replaceState: () => calls.push('limpiar-url') },
         document: { referrer },
         window: { parent, addEventListener: (name, handler) => handlers[name] = handler },
@@ -23,13 +23,13 @@ async function setup({ referrer = 'http://10.0.128.73:3000/', fail = false, temp
     });
     vm.runInContext(bridge, context);
     await new Promise(setImmediate);
-    const send = (changes = {}) => handlers.message({ source: parent, origin: 'http://10.0.128.73:3000', data: { tipo: 'firma-acceso', canal: 'prueba', usuario: 'demo', password: 'clave-prueba', referencia: '00123456' }, ...changes });
+    const send = (changes = {}) => handlers.message({ source: parent, origin: 'http://10.0.128.73:3357', data: { tipo: 'firma-acceso', canal: 'prueba', usuario: 'demo', password: 'clave-prueba', referencia: '00123456' }, ...changes });
     return { send, messages, requests, calls, context };
 }
 test('Autentica por API y consulta referencia una sola vez', async () => {
     const app = await setup();
     assert.equal(app.messages[0][0].tipo, 'firma-lista');
-    assert.equal(app.messages[0][1], 'http://10.0.128.73:3000');
+    assert.equal(app.messages[0][1], 'http://10.0.128.73:3357');
     await app.send(); await app.send();
     assert.equal(app.requests.length, 1);
     assert.equal(app.requests[0][0], '/api/sesion');
@@ -59,10 +59,10 @@ test('Si falla autenticación conserva referencia para login manual y no consult
     assert.ok(!app.calls.includes('consultar'));
 });
 
-test('Acceso temporal ignora credenciales de Entregas y no anuncia el intercambio', async () => {
+test('Entregas vuelve a autenticar incluso con una marca temporal antigua', async () => {
     const app = await setup({ temporal: true });
     await app.send();
-    assert.equal(app.requests.length, 0);
-    assert.equal(app.messages.length, 0);
-    assert.ok(!app.calls.includes('consultar'));
+    assert.equal(app.requests.length, 1);
+    assert.equal(app.messages[0][0].tipo, 'firma-lista');
+    assert.ok(app.calls.includes('consultar'));
 });

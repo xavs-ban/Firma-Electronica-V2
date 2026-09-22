@@ -214,34 +214,47 @@ public class ApiFirmaTests
         Assert.DoesNotContain("cliente-falso", sesion);
     }
     [Fact]
-    public async Task ModoTemporalUsaSoloCredencialesDelServidorYPerfilCompartido()
+    public async Task ConfiguracionTemporalAntiguaNoSustituyeLaCuentaIndividual()
     {
-        await using var aplicacion = new Aplicacion { AccesoTemporal = true };
+        await using var aplicacion = new Aplicacion { AccesoTemporal = true, UsuarioTemporal = "cuenta-compartida" };
         using var cliente = aplicacion.CreateClient();
         await Csrf(cliente);
-        var respuesta = await cliente.PostAsJsonAsync("/api/sesion", new Acceso("usuario-entregas", "clave-entregas"));
+        var respuesta = await cliente.PostAsJsonAsync("/api/sesion", new Acceso("prueba", "clave-entregas"));
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
         Assert.Single(aplicacion.Logins);
         Assert.Contains("email=prueba", aplicacion.Logins[0]);
-        Assert.Contains("password=clave-compartida-prueba", aplicacion.Logins[0]);
-        Assert.DoesNotContain("entregas", aplicacion.Logins[0]);
+        Assert.Contains("password=clave-entregas", aplicacion.Logins[0]);
+        Assert.DoesNotContain("cuenta-compartida", aplicacion.Logins[0]);
         var sesion = await cliente.GetStringAsync("/api/sesion");
         Assert.Contains("prueba", sesion);
         Assert.DoesNotContain("clave-compartida", sesion);
         var pagina = await cliente.GetStringAsync("/");
-        Assert.Contains("data-acceso-temporal=\"true\"", pagina);
+        Assert.DoesNotContain("data-acceso-temporal", pagina);
         Assert.DoesNotContain("clave-compartida", pagina);
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/api/agencias")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync("/api/referencias/sin-permiso")).StatusCode);
     }
     [Fact]
-    public async Task ModoTemporalSinConfiguracionNoCaeEnCredencialesDelNavegador()
+    public async Task ConfiguracionTemporalIncompletaNoImpideLoginIndividual()
     {
         await using var aplicacion = new Aplicacion { AccesoTemporal = true, ContrasenaTemporal = "" };
         using var cliente = aplicacion.CreateClient();
         await Csrf(cliente);
-        Assert.Equal(HttpStatusCode.Conflict, (await cliente.PostAsJsonAsync("/api/sesion", new Acceso("prueba", "clave"))).StatusCode);
-        Assert.Empty(aplicacion.Logins);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsJsonAsync("/api/sesion", new Acceso("prueba", "clave"))).StatusCode);
+        Assert.Single(aplicacion.Logins);
+    }
+    [Fact]
+    public async Task SesionCompartidaAnteriorSeInvalidaAunqueSigaConfigurada()
+    {
+        await using var aplicacion = new Aplicacion { AccesoTemporal = true };
+        using var cliente = aplicacion.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        var opciones = aplicacion.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>()
+            .Get(Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme);
+        var identidad = new System.Security.Claims.ClaimsIdentity([
+            new(System.Security.Claims.ClaimTypes.NameIdentifier, "prueba"), new("agencias", "306"), new("acceso_temporal", "prueba")], "Cookies");
+        var ticket = new Microsoft.AspNetCore.Authentication.AuthenticationTicket(new(identidad), new() { ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(10) }, "Cookies");
+        cliente.DefaultRequestHeaders.Add("Cookie", "FirmaDigital.Auth=" + opciones.TicketDataFormat.Protect(ticket));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await cliente.GetAsync("/api/agencias")).StatusCode);
     }
     private static async Task Entrar(HttpClient cliente)
     {

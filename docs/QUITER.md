@@ -10,7 +10,7 @@ Antes de convocar a firma, la plataforma actual actualiza los datos de contacto 
 4. Busca `cta_cliente` en los datos de la referencia.
 5. Si existe cuenta de cliente, obtiene token de Quiter.
 6. Envia actualizacion a Quiter.
-7. Aunque Quiter falle, el flujo actual no detiene visualmente toda la convocatoria; el error se absorbe.
+7. Si Quiter falla, la convocatoria continúa y el resultado muestra el motivo controlado del fallo.
 
 ## Payload actual
 
@@ -18,8 +18,8 @@ Antes de convocar a firma, la plataforma actual actualiza los datos de contacto 
 {
   "validated": true,
   "email": "cliente@correo.com",
-  "phoneNumbers": [{ "phoneNumber": "5512345678", "observations": "ACTUALIZADO DESDE FIRMA DIGITAL" }],
-  "mobilePhoneNumber": [{ "phoneNumber": "5512345678", "observations": "ACTUALIZADO DESDE FIRMA DIGITAL" }]
+  "phoneNumbers": ["5512345678"],
+  "mobilePhoneNumber": ["5512345678"]
 }
 ```
 
@@ -28,4 +28,6 @@ Antes de convocar a firma, la plataforma actual actualiza los datos de contacto 
 - El telefono se limpia y se limita a 10 digitos.
 - No se mandan arreglos vacios.
 - Si no hay correo ni telefono, no se llama a Quiter.
-- En la V2 debemos registrar el resultado en logs internos para diagnostico, sin bloquear de mas al usuario.
+- Se distinguen los errores de autorización y actualización por código HTTP, sin mostrar cuerpos remotos ni credenciales.
+- Autorización y actualización comparten un plazo de 60 segundos; cada petición dispone de hasta 45 segundos.
+- El formato se restauró a partir de `mi_api/form.js` del ZIP anterior: ambos arreglos contienen cadenas, no objetos.

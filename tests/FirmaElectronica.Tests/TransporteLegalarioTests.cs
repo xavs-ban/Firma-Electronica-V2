@@ -106,7 +106,7 @@ public class TransporteLegalarioTests
         var contacto = ClienteQuiter.PrepararContacto(new("1", " ana@example.com ", "+52 (55) 1234-5678"));
         Assert.Equal("ana@example.com", contacto["email"]);
         using var cuerpo = JsonDocument.Parse(JsonSerializer.Serialize(contacto));
-        Assert.Equal("5512345678", cuerpo.RootElement.GetProperty("phoneNumbers")[0].GetProperty("phoneNumber").GetString());
+        Assert.Equal("5512345678", cuerpo.RootElement.GetProperty("phoneNumbers")[0].GetString());
         var soloCorreo = ClienteQuiter.PrepararContacto(new("1", "ana@example.com", ""));
         Assert.False(soloCorreo.ContainsKey("phoneNumbers"));
         Assert.Empty(ClienteQuiter.PrepararContacto(new("1", " ", "")));
@@ -138,19 +138,29 @@ public class TransporteLegalarioTests
             Assert.Equal("Bearer token-prueba", r.Headers.Authorization!.ToString());
             using var body = JsonDocument.Parse(await r.Content!.ReadAsStringAsync(ct));
             Assert.Equal("cliente@example.com", body.RootElement.GetProperty("email").GetString());
-            Assert.Equal("5512345678", body.RootElement.GetProperty("phoneNumbers")[0].GetProperty("phoneNumber").GetString());
-            Assert.Equal("5512345678", body.RootElement.GetProperty("mobilePhoneNumber")[0].GetProperty("phoneNumber").GetString());
+            Assert.Equal("5512345678", body.RootElement.GetProperty("phoneNumbers")[0].GetString());
+            Assert.Equal("5512345678", body.RootElement.GetProperty("mobilePhoneNumber")[0].GetString());
             Assert.True(body.RootElement.GetProperty("validated").GetBoolean());
-            foreach (var campo in new[] { "phoneNumbers", "mobilePhoneNumber" })
-                Assert.Equal("ACTUALIZADO DESDE FIRMA DIGITAL", body.RootElement.GetProperty(campo)[0].GetProperty("observations").GetString());
+            Assert.Equal(4, body.RootElement.EnumerateObject().Count());
             return new HttpResponseMessage(estado);
         });
         using var http = new HttpClient(transporte);
         var cliente = new ClienteQuiter(http, new() { ClientId = "prueba", ClientSecret = "prueba", Code = "prueba" });
         var actualizar = () => cliente.ActualizarContactoClienteAsync(new("99619", "cliente@example.com", "5512345678"), default);
         if (estado == HttpStatusCode.NoContent) await actualizar();
-        else await Assert.ThrowsAsync<InvalidOperationException>(actualizar);
+        else { var error = await Assert.ThrowsAsync<ActualizacionQuiterException>(actualizar); Assert.Contains("HTTP 400", error.Message); }
         Assert.Equal(2, transporte.Envios);
+    }
+    [Fact]
+    public async Task QuiterExplicaRechazoDeAutorizacionSinExponerRespuestaNiEnviarContacto()
+    {
+        using var transporte = new Transporte((_, _) => Task.FromResult(Respuesta("secreto-no-publicable", HttpStatusCode.Unauthorized)));
+        using var http = new HttpClient(transporte);
+        var cliente = new ClienteQuiter(http, new() { ClientId = "prueba", ClientSecret = "privado", Code = "privado" });
+        var error = await Assert.ThrowsAsync<ActualizacionQuiterException>(() => cliente.ActualizarContactoClienteAsync(new("1", "ana@example.com", "5512345678"), default));
+        Assert.Contains("autorización (HTTP 401)", error.Message);
+        Assert.DoesNotContain("secreto", error.Message);
+        Assert.Equal(1, transporte.Envios);
     }
     [Theory]
     [InlineData(404)]

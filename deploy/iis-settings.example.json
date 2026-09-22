@@ -11,10 +11,5 @@
   },
   "Legalario": {
     "BaseUrl": "https://api.legalario.com"
-  },
-  "AccesoTemporal": {
-    "Activo": false,
-    "Usuario": "",
-    "Contrasena": ""
   }
 }

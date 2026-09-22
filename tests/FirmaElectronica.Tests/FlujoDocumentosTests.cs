@@ -304,6 +304,21 @@ public class FlujoDocumentosTests : IDisposable
         }
         finally { await cola.StopAsync(default); }
     }
+    [Fact]
+    public async Task RechazoQuiterLlegaAlAvisoSinImpedirEnviarInvitaciones()
+    {
+        var cliente = new LegalarioFalso();
+        var resultado = await new ServicioConvocatoria(cliente, new QuiterRechazado(), new RegistroIntentosArchivo(carpeta)).ConvocarAsync("d", "cuenta",
+            [new("Ana", "ana@example.com", "5512345678", TipoFirmante.Cliente)], "token", default);
+        Assert.False(resultado.ContactoActualizado);
+        Assert.Contains("HTTP 400", resultado.AvisoContacto);
+        Assert.Equal(1, cliente.Convocatorias);
+    }
+    private sealed class QuiterRechazado : IQuiterClient
+    {
+        public Task ActualizarContactoClienteAsync(ContactoClienteQuiter contacto, CancellationToken ct) =>
+            throw new ActualizacionQuiterException("Quiter rechazó la actualización del contacto (HTTP 400).");
+    }
     private sealed class QuiterAgotado : IQuiterClient
     {
         public Task ActualizarContactoClienteAsync(ContactoClienteQuiter contacto, CancellationToken ct)

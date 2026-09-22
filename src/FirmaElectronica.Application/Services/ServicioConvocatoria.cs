@@ -38,11 +38,19 @@ public sealed class ServicioConvocatoria(ILegalarioClient legalario, IQuiterClie
             try
             {
                 using var plazoQuiter = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                plazoQuiter.CancelAfter(TimeSpan.FromSeconds(15));
+                plazoQuiter.CancelAfter(TimeSpan.FromSeconds(60));
                 await quiter.ActualizarContactoClienteAsync(new(cuentaCliente, cliente.Correo, cliente.Telefono), plazoQuiter.Token);
                 actualizado = true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException)
+            { aviso = "Quiter excedió el tiempo de espera para actualizar el contacto; no se confirmó el cambio."; }
+            catch (ActualizacionQuiterException error)
+            { aviso = error.Message; }
+            catch (HttpRequestException)
+            { aviso = "No se pudo conectar con Quiter para actualizar el contacto."; }
+            catch (System.Text.Json.JsonException)
+            { aviso = "Quiter devolvió una autorización con formato no válido."; }
             catch (Exception)
             { aviso = "La convocatoria continúa, pero no se confirmó la actualización del contacto en Quiter."; }
         }

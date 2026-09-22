@@ -1,5 +1,4 @@
 using System.Threading.RateLimiting;
-using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
@@ -17,7 +16,6 @@ using Microsoft.AspNetCore.RateLimiting;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true).AddEnvironmentVariables();
 builder.Services.AddRazorPages();
-builder.Services.Configure<AccesoTemporalOptions>(builder.Configuration.GetSection("AccesoTemporal"));
 // Excepción explícita para la dirección HTTP privada solicitada en IIS.
 var httpInterno = builder.Configuration.GetValue<bool>("Hosting:HttpInterno");
 var cookiesSeguras = builder.Environment.IsDevelopment() || httpInterno
@@ -46,10 +44,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     opciones.Cookie.SecurePolicy = cookiesSeguras;
     opciones.Events.OnValidatePrincipal = async contexto =>
     {
-        var modo = contexto.HttpContext.RequestServices.GetRequiredService<IOptions<AccesoTemporalOptions>>().Value;
         var marca = contexto.Principal?.FindFirst("acceso_temporal")?.Value;
-        if ((modo.Activo && (marca != modo.Usuario || !string.Equals(contexto.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, modo.Usuario, StringComparison.OrdinalIgnoreCase))) ||
-            (!modo.Activo && marca is not null))
+        // Las sesiones compartidas anteriores deben volver a autenticarse con su propia cuenta.
+        if (marca is not null)
         {
             contexto.RejectPrincipal();
             contexto.HttpContext.Session.Clear();
@@ -84,7 +81,7 @@ builder.Services.AddHttpClient<ILegalarioClient, ClienteLegalario>(cliente =>
 builder.Services.AddScoped<ICreadorDocumentoLegalario>(servicios => servicios.GetRequiredService<ILegalarioClient>());
 builder.Services.AddHttpClient<AutorizacionLegalario>(cliente => cliente.Timeout = TimeSpan.FromSeconds(30))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-builder.Services.AddHttpClient<IQuiterClient, ClienteQuiter>(cliente => cliente.Timeout = TimeSpan.FromSeconds(30))
+builder.Services.AddHttpClient<IQuiterClient, ClienteQuiter>(cliente => cliente.Timeout = TimeSpan.FromSeconds(45))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<IConsultaReferencia, ConsultaReferenciaSql>();
 builder.Services.AddScoped<IReferenciaDataProvider, ProveedorReferencias>();

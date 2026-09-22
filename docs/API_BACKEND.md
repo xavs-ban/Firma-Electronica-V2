@@ -101,24 +101,12 @@ La convocatoria omite `workflow`, igual que el ZIP anterior proporcionado por el
 
 Dentro del modal «Reenvío de invitaciones y enlace», junto a Reenviar invitación, se permite obtener y copiar el enlace de cada firmante existente (`https://saas.legalario.com/portal/invitacion/{signerId}`). Esta acción sólo consulta; no crea firmantes ni reenvía invitaciones. La generación y el envío confirmado presentan un modal de resultado.
 
-## Acceso compartido temporal
+## Acceso individual desde Entregas
 
-`AccesoTemporal:Activo=true` habilita el botón Entrar a Firma Digital. El servidor toma `Usuario` y `Contrasena` de esa sección privada, ignora las credenciales del navegador y obtiene el perfil SQL de la cuenta compartida. Todos actúan con la identidad y agencias de ese perfil. No se omiten los permisos por agencia, CSRF ni límites de acceso; las sesiones individuales anteriores deben volver a entrar. En este modo la atribución en Legalario y los intentos corresponde a la cuenta compartida.
+El modo compartido temporal fue retirado. Cada sesión usa las credenciales recibidas desde Entregas o las del formulario de acceso. Una sección antigua `AccesoTemporal` en la configuración ya no puede sustituir esa cuenta; el despliegue omite dicha sección en la nueva release. Las sesiones con la marca `acceso_temporal` se invalidan y deben autenticarse de nuevo. Se conservan la validación del origen, ventana y canal de Entregas, además del perfil y los permisos de cada usuario.
 
-El intercambio de credenciales con App de Entregas (`http://10.0.128.73:3357/index.html`) queda pausado mediante una condición comentada en el puente. No se procesan mensajes `firma-acceso` ni se anuncia `firma-lista`. Al desactivar el modo se restaura el flujo individual sin reescribir el puente.
+## Actualización de contacto en Quiter
 
-Las credenciales se configuran en `appsettings.Local.json` para desarrollo o en el archivo privado de IIS. Ningún ejemplo del repositorio contiene credenciales reales. Para IIS, copia el JSON privado de la cuenta al servidor y ejecuta:
+El cuerpo vuelve al formato del ZIP anterior: `email`, `validated: true`, `phoneNumbers: ["5512345678"]` y `mobilePhoneNumber: ["5512345678"]`. Los teléfonos son cadenas, sin objetos ni observaciones adicionales; se omiten listas vacías. La actualización dispone de 60 segundos para autorización y PUT, con hasta 45 segundos por petición dentro del plazo global de convocatoria. Un fallo distingue configuración ausente, HTTP de autorización/actualización, formato inválido, conexión y tiempo agotado. No se muestran cuerpos remotos ni secretos. Las invitaciones pueden completarse aunque Quiter falle, conservando el aviso de contacto pendiente.
 
-```powershell
-.\deploy\configurar-acceso-temporal.ps1 -ArchivoCuenta 'C:\ruta-privada\firma-acceso-temporal.private.json'
-.\deploy\deploy-firma-digital.ps1
-```
-
-Para volver al acceso por empleado:
-
-```powershell
-.\deploy\configurar-acceso-temporal.ps1 -Desactivar
-.\deploy\deploy-firma-digital.ps1
-```
-
-El script modifica únicamente la sección AccesoTemporal del archivo privado existente. No despliega por sí solo. Al activar o desactivar, las sesiones del modo anterior se invalidan en la siguiente petición autenticada.
+El 21 de septiembre se verificó la autorización de Quiter con la configuración local (HTTP 200). No se actualizaron clientes reales: el funcionamiento del PUT se validó con el formato del ZIP y pruebas de transporte simulado, pendiente de comprobación en el servidor.

@@ -73,6 +73,8 @@ if (Test-Path "$release\appsettings.Local.json") { throw 'El paquete contiene co
 $data = Join-Path $BasePath 'data'
 $root = Join-Path $BasePath 'site-root'
 New-Item -ItemType Directory -Force -Path $data,$root | Out-Null
+# El acceso vuelve a ser individual; no copiar la cuenta compartida a la nueva release.
+$config.PSObject.Properties.Remove('AccesoTemporal')
 $config | Add-Member -Force NoteProperty Hosting (@{ HttpInterno = $true })
 $config | Add-Member -Force NoteProperty Intentos (@{ Carpeta = "$data\intentos" })
 $config | Add-Member -Force NoteProperty DataProtection (@{ Carpeta = "$data\keys" })

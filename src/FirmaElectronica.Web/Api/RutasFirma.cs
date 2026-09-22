@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Microsoft.Extensions.Options;
 using System.Text.Json;
 using FirmaElectronica.Application.Abstractions;
 using FirmaElectronica.Application.Services;
@@ -51,13 +50,10 @@ public static class RutasFirma
             c.Response.Headers.CacheControl = "no-store";
             return Results.Ok(new { token = antiforgery.GetAndStoreTokens(c).RequestToken });
         });
-        app.MapPost("/api/sesion", async (Acceso acceso, HttpContext c, IConsultaPerfilUsuario autenticador, AutorizacionLegalario autorizacion, IOptions<AccesoTemporalOptions> modo, CancellationToken ct) =>
+        app.MapPost("/api/sesion", async (Acceso acceso, HttpContext c, IConsultaPerfilUsuario autenticador, AutorizacionLegalario autorizacion, CancellationToken ct) =>
         {
-            var temporal = modo.Value;
-            if (temporal.Activo && (string.IsNullOrWhiteSpace(temporal.Usuario) || string.IsNullOrWhiteSpace(temporal.Contrasena)))
-                throw new InvalidOperationException("Falta configurar la cuenta temporal en el servidor.");
-            var nombre = temporal.Activo ? temporal.Usuario : acceso.Usuario;
-            var contrasena = temporal.Activo ? temporal.Contrasena : acceso.Contrasena;
+            var nombre = acceso.Usuario;
+            var contrasena = acceso.Contrasena;
             var token = await autorizacion.IniciarSesionAsync(nombre, contrasena, ct);
             if (token is null) return Results.Unauthorized();
             var usuario = await autenticador.ConsultarAsync(nombre, ct);
@@ -69,7 +65,6 @@ public static class RutasFirma
                 new Claim(ClaimTypes.NameIdentifier, usuario.Usuario), new Claim(ClaimTypes.Name, usuario.Nombre),
                 new Claim(ClaimTypes.Role, usuario.Rol), new Claim("agencias", usuario.Agencias)
             }, CookieAuthenticationDefaults.AuthenticationScheme);
-            if (temporal.Activo) identidad.AddClaim(new Claim("acceso_temporal", temporal.Usuario));
             await c.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identidad));
             return Results.Ok(new { usuario.Usuario, usuario.Nombre, usuario.Rol, Agencias = usuario.AgenciasPermitidas });
         }).RequireRateLimiting("acceso");
